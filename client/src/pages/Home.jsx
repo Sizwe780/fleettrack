@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from '../services/api';
-import Navbar from './Navbar'; // Make sure this import exists
+import Navbar from './Navbar';
 
 const Home = () => {
   const navigate = useNavigate();
+
+  // Separate currentLocation from formData to prevent overwrite issues
   const [formData, setFormData] = useState({
     driverName: '',
-    currentLocation: '',
     pickupLocation: '',
     dropoffLocation: '',
     cycleHours: '',
     departure: ''
   });
 
+  const [currentLocation, setCurrentLocation] = useState('');
   const [locationDetected, setLocationDetected] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -22,10 +24,7 @@ const Home = () => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        setFormData((prev) => ({
-          ...prev,
-          currentLocation: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
-        }));
+        setCurrentLocation(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
         setLocationDetected(true);
       },
       (err) => {
@@ -38,16 +37,20 @@ const Home = () => {
   }, []);
 
   const handleChange = (e) => {
-    console.log('Typing:', e.target.name, e.target.value); // Optional debug
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value
+    }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    const payload = { ...formData, currentLocation };
     try {
-      await API.post('/trips', formData);
+      await API.post('/trips', payload);
       navigate('/dashboard');
     } catch (err) {
       console.error('Trip submission failed:', err);
