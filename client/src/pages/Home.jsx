@@ -19,6 +19,7 @@ const Home = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Only set location once, never overwrite formData
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -47,7 +48,12 @@ const Home = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    const payload = { ...formData, currentLocation };
+
+    const payload = {
+      ...formData,
+      currentLocation: currentLocation || 'Manual entry required'
+    };
+
     try {
       await API.post('/trips', payload);
       navigate('/dashboard');
