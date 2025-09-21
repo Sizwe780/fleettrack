@@ -3,13 +3,13 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp } from 'firebase/firestore';
 
-// Your Mapbox access token. Replace with your own.
-const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2VuZ3dlbnlhNzgiLCJhIjoiY2x1bWJ6dXh5MG4zZzJsczJ5ejQ5Y3VwYjZzIn0.niS9m5pCbK5Kv-_On2mTcg';
-
 // Define the global Firebase variables
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+// Your Mapbox access token. Replace with your own.
+const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2VuZ3dlbnlhNzgiLCJhIjoiY2x1bWJ6dXh5MG4zZzJsczJ5ejQ5Y3VwYjZzIn0.niS9m5pCbK5Kv-_On2mTcg';
 
 // The main App component
 const App = () => {
@@ -21,7 +21,7 @@ const App = () => {
   const [modalMessage, setModalMessage] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState(null);
-  const [view, setView] = useState('list'); // 'list' or 'eld_log'
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
   // Initialize Firebase and authenticate the user
   useEffect(() => {
@@ -42,6 +42,8 @@ const App = () => {
             }
           } catch (error) {
             console.error("Firebase Auth error:", error);
+          } finally {
+            setIsAuthReady(true);
           }
         };
 
@@ -58,15 +60,17 @@ const App = () => {
         return () => unsubscribe();
       } else {
         console.warn("Firebase config is missing. The app will not save data.");
+        setIsAuthReady(true);
       }
     } catch (error) {
       console.error("Firebase initialization failed:", error);
+      setIsAuthReady(true);
     }
   }, []);
 
   // Set up the Firestore listener to get real-time trip data
   useEffect(() => {
-    if (db && userId) {
+    if (db && userId && isAuthReady) {
       const q = query(
         collection(db, `artifacts/${appId}/users/${userId}/trips`),
         orderBy("timestamp", "desc")
@@ -83,7 +87,7 @@ const App = () => {
 
       return () => unsubscribe();
     }
-  }, [db, userId]);
+  }, [db, userId, isAuthReady]);
 
   const TripForm = () => {
     const [origin, setOrigin] = useState('');
@@ -235,7 +239,7 @@ const App = () => {
     const canvasRef = useRef(null);
 
     useEffect(() => {
-      if (!trip) return;
+      if (!trip || typeof window.canvas === 'undefined') return;
 
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
@@ -316,8 +320,6 @@ const App = () => {
         drawLine(statusLines[3].y, departureMinutes, arrivalMinutes);
       };
 
-      // In a real-world app, you'd calculate a full 24-hour log.
-      // For this example, we'll draw a simple log for the trip's duration.
       drawLogSheet(trip.date, trip.driverName, trip);
 
     }, [trip]);
