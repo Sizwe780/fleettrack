@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote, Fuel, Bed } from 'lucide-react';
+import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote, Fuel, Bed, Database, ListChecks, TrendingUp, Info } from 'lucide-react';
 import { createRoot } from 'react-dom/client';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth';
+import { getFirestore, doc, getDoc, addDoc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
@@ -22,8 +25,44 @@ const App = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [locationStatus, setLocationStatus] = useState(null);
+  const [db, setDb] = useState(null);
+  const [auth, setAuth] = useState(null);
+  const [user, setUser] = useState(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
   const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2U3ODAiLCJhIjoiY2x1d2R5ZGZqMGQwMTJpcXBtYXk2dW1icSJ9.9j1hS_x2n3K7x_j5l001Q';
+  const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+  const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+  const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+  useEffect(() => {
+    try {
+      const app = initializeApp(firebaseConfig);
+      const dbInstance = getFirestore(app);
+      const authInstance = getAuth(app);
+      setDb(dbInstance);
+      setAuth(authInstance);
+
+      onAuthStateChanged(authInstance, async (authUser) => {
+        if (authUser) {
+          setUser(authUser);
+        } else {
+          try {
+            if (initialAuthToken) {
+              await signInWithCustomToken(authInstance, initialAuthToken);
+            } else {
+              await signInAnonymously(authInstance);
+            }
+          } catch (error) {
+            console.error("Firebase Auth Error:", error);
+          }
+        }
+        setIsAuthReady(true);
+      });
+    } catch (e) {
+      console.error("Firebase Initialization Error:", e);
+    }
+  }, []);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -38,7 +77,6 @@ const App = () => {
       ...prevRemarks,
       [dayIndex]: value
     }));
-    // Update the remarks in the main log data state as well
     setLogData(prevLogs => {
       const newLogs = [...prevLogs];
       newLogs[dayIndex] = { ...newLogs[dayIndex], remarks: value };
@@ -91,10 +129,10 @@ const App = () => {
   };
 
   const calculateHOS = (totalDistanceMiles) => {
-    const speed = 50; // Average truck speed in mph
+    const speed = 50;
     const totalDrivingHours = totalDistanceMiles / speed;
     const initialCycleHours = parseFloat(formData.cycleUsed) || 0;
-    const driverCycle = 70; // 70 hours over 8 days
+    const driverCycle = 70;
     const dailyDrivingLimit = 11;
     const dailyOnDutyLimit = 14;
     const dailyOffDutyRequired = 10;
@@ -108,7 +146,7 @@ const App = () => {
 
     while (distanceCovered < totalDistanceMiles && remainingCycleHours > 0 && days <= 8) {
       let dailyDriving = Math.min(dailyDrivingLimit, totalDrivingHours - (distanceCovered / speed));
-      let dailyOnDuty = Math.min(dailyOnDutyLimit, dailyDriving + 2); // 2 hours for stops/inspections
+      let dailyOnDuty = Math.min(dailyOnDutyLimit, dailyDriving + 2);
       
       let offDuty = Math.max(0, 24 - dailyOnDuty);
       if (offDuty < dailyOffDutyRequired) {
@@ -148,74 +186,88 @@ const App = () => {
       }
     }
 
-    return { logs, stops };
+    return { logs, stops, totalDrivingHours, totalDistanceMiles, days };
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage('');
     setMessageType('');
     setIsLoading(true);
 
-    const geocode = (location) => {
-      return fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(location)}.json?access_token=${MAPBOX_ACCESS_TOKEN}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.features.length > 0) {
-            return data.features[0].geometry.coordinates;
-          }
-          throw new Error(`Could not find coordinates for ${location}`);
-        });
-    };
+    if (!isAuthReady || !user) {
+      setMessage('Authentication is not ready. Please try again.');
+      setMessageType('error');
+      setIsLoading(false);
+      return;
+    }
 
-    const getRoute = async () => {
-      try {
-        const [originCoords, destinationCoords] = await Promise.all([
-          geocode(formData.origin),
-          geocode(formData.destination)
-        ]);
-
-        const routeUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords[0]},${originCoords[1]};${destinationCoords[0]},${destinationCoords[1]}?geometries=polyline6&access_token=${MAPBOX_ACCESS_TOKEN}`;
-        const routeRes = await fetch(routeUrl);
-        const routeData = await routeRes.json();
-        
-        if (routeData.routes && routeData.routes.length > 0) {
-          const route = routeData.routes[0];
-          const totalDistanceMiles = route.distance / 1609.34; // Convert meters to miles
-          
-          const { logs, stops } = calculateHOS(totalDistanceMiles);
-
-          setMapData({
-            routePolyline: route.geometry,
-            stops: stops.map(stop => {
-              const routePoint = Math.floor(Math.random() * route.geometry.length);
-              return {
-                ...stop,
-                lat: route.geometry[routePoint][1],
-                lng: route.geometry[routePoint][0],
-              };
-            })
-          });
-          setLogData(logs);
-          setLogRemarks(Object.fromEntries(logs.map((log, index) => [index, ''])));
-
-          setMessage('Trip planned successfully! Check the Map and Logs tabs.');
-          setMessageType('success');
-          setActiveTab('map');
-        } else {
-          throw new Error('No routes found.');
-        }
-
-      } catch (error) {
-        console.error('Trip planning failed:', error);
-        setMessage(`Failed to plan trip: ${error.message}`);
-        setMessageType('error');
-      } finally {
-        setIsLoading(false);
+    const geocode = async (location) => {
+      const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(location)}.json?access_token=${MAPBOX_ACCESS_TOKEN}`);
+      const data = await response.json();
+      if (data.features && data.features.length > 0) {
+        return data.features[0].geometry.coordinates;
       }
+      throw new Error(`Could not find coordinates for ${location}`);
     };
-    
-    getRoute();
+
+    try {
+      const [originCoords, destinationCoords] = await Promise.all([
+        geocode(formData.origin),
+        geocode(formData.destination)
+      ]);
+
+      const routeUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords[0]},${originCoords[1]};${destinationCoords[0]},${destinationCoords[1]}?geometries=polyline6&access_token=${MAPBOX_ACCESS_TOKEN}`;
+      const routeRes = await fetch(routeUrl);
+      const routeData = await routeRes.json();
+      
+      if (routeData.routes && routeData.routes.length > 0) {
+        const route = routeData.routes[0];
+        const totalDistanceMiles = route.distance / 1609.34;
+        
+        const { logs, stops, totalDrivingHours, days } = calculateHOS(totalDistanceMiles);
+
+        const newMapData = {
+          routePolyline: route.geometry,
+          stops: stops.map(stop => {
+            const routePoint = Math.floor(Math.random() * route.geometry.length);
+            return {
+              ...stop,
+              lat: route.geometry[routePoint][1],
+              lng: route.geometry[routePoint][0],
+            };
+          })
+        };
+        setMapData(newMapData);
+        setLogData(logs);
+        setLogRemarks(Object.fromEntries(logs.map((log, index) => [index, ''])));
+
+        const tripDataToSave = {
+          ...formData,
+          ...newMapData,
+          logs,
+          totalDistanceMiles: totalDistanceMiles.toFixed(2),
+          totalDrivingHours: totalDrivingHours.toFixed(2),
+          totalDays: days - 1,
+          timestamp: new Date().toISOString(),
+        };
+
+        const tripsCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'trips');
+        await addDoc(tripsCollectionRef, tripDataToSave);
+        
+        setMessage('Trip planned and saved successfully! Check the Map and Logs tabs.');
+        setMessageType('success');
+        setActiveTab('map');
+      } else {
+        throw new Error('No routes found.');
+      }
+    } catch (error) {
+      console.error('Trip planning failed:', error);
+      setMessage(`Failed to plan trip: ${error.message}`);
+      setMessageType('error');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const TripMap = () => {
@@ -529,14 +581,129 @@ const App = () => {
   };
 
   const Reports = () => {
+    const [trips, setTrips] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+      if (!isAuthReady || !user || !db) return;
+      setLoading(true);
+      const tripsCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'trips');
+      
+      const unsubscribe = onSnapshot(tripsCollectionRef, (querySnapshot) => {
+        const tripsData = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        tripsData.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        setTrips(tripsData);
+        setLoading(false);
+      }, (error) => {
+        console.error("Error fetching reports:", error);
+        setLoading(false);
+      });
+      
+      return () => unsubscribe();
+    }, [isAuthReady, user, db, appId]);
+
+    const Chart = ({ data }) => {
+      const maxMiles = Math.max(...data.map(d => parseFloat(d.totalDistanceMiles)), 0) || 1;
+      const totalWidth = 600;
+      const totalHeight = 300;
+      const padding = 40;
+      const barWidth = (totalWidth - 2 * padding) / (data.length * 1.5);
+    
+      return (
+        <svg viewBox={`0 0 ${totalWidth} ${totalHeight}`} className="w-full h-auto">
+          <rect x="0" y="0" width={totalWidth} height={totalHeight} fill="#F9FAFB" rx="12" ry="12" />
+          <line x1={padding} y1={totalHeight - padding} x2={totalWidth - padding / 2} y2={totalHeight - padding} stroke="#D1D5DB" strokeWidth="2" />
+          <line x1={padding} y1={totalHeight - padding} x2={padding} y2={padding} stroke="#D1D5DB" strokeWidth="2" />
+          
+          {data.map((trip, index) => {
+            const miles = parseFloat(trip.totalDistanceMiles);
+            const barHeight = (miles / maxMiles) * (totalHeight - 2 * padding);
+            const x = padding + index * (barWidth * 1.5);
+            const y = totalHeight - padding - barHeight;
+            
+            return (
+              <g key={index}>
+                <rect 
+                  x={x} 
+                  y={y} 
+                  width={barWidth} 
+                  height={barHeight} 
+                  fill="#4F46E5" 
+                  rx="4" 
+                  ry="4"
+                >
+                  <title>{`${trip.origin} to ${trip.destination}: ${miles} miles`}</title>
+                </rect>
+                <text x={x + barWidth / 2} y={y - 5} textAnchor="middle" fontSize="12" fill="#374151" fontWeight="bold">{miles}</text>
+                <text x={x + barWidth / 2} y={totalHeight - padding + 15} textAnchor="middle" fontSize="10" fill="#6B7280">{new Date(trip.timestamp).toLocaleDateString()}</text>
+              </g>
+            );
+          })}
+        </svg>
+      );
+    };
+
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center h-96">
+          <div className="flex flex-col items-center">
+            <Loader className="animate-spin text-indigo-600" size={48} />
+            <p className="mt-4 text-gray-500">Loading trip data...</p>
+          </div>
+        </div>
+      );
+    }
+    
+    if (trips.length === 0) {
+      return (
+        <div className="flex flex-col items-center p-8 bg-white rounded-2xl shadow-xl">
+          <h2 className="text-3xl font-bold text-center text-gray-900 mb-4">Trip Reports</h2>
+          <p className="text-center text-gray-600 mb-8">
+            This section provides detailed analytics for your trips.
+          </p>
+          <div className="flex flex-col items-center justify-center h-64 p-8 bg-gray-50 rounded-lg w-full text-center text-gray-500">
+            <Info className="mb-4" size={48} />
+            <p>No trips have been planned yet. Go to the Home tab to start a new trip!</p>
+            <p className="text-xs mt-2">Authenticated User ID: {user?.uid}</p>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="flex flex-col items-center justify-center p-8 bg-white rounded-2xl shadow-xl">
+      <div className="flex flex-col items-center p-8 bg-white rounded-2xl shadow-xl">
         <h2 className="text-3xl font-bold text-center text-gray-900 mb-4">Trip Reports</h2>
         <p className="text-center text-gray-600 mb-8">
-          This section will provide detailed analytics and reports for your past trips.
+          A summary of your past trips, powered by Firestore.
         </p>
-        <div className="p-8 bg-gray-50 rounded-lg w-full text-center text-gray-500">
-          <p>Reports feature coming soon!</p>
+        <div className="w-full max-w-4xl mb-8">
+          <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2 mb-4">
+            <TrendingUp size={20} /> Miles Driven Per Trip
+          </h3>
+          <Chart data={trips} />
+        </div>
+        <div className="w-full max-w-4xl space-y-4">
+          <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2 mb-4">
+            <ListChecks size={20} /> Past Trips
+          </h3>
+          {trips.map(trip => (
+            <div key={trip.id} className="bg-gray-50 p-6 rounded-xl border border-gray-200 flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0 sm:space-x-4">
+              <div className="flex-1">
+                <p className="text-lg font-semibold text-gray-900">{trip.origin} to {trip.destination}</p>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">{trip.driverName}</span> | {trip.vehicleNumber}
+                </p>
+                <p className="text-sm text-gray-500">Planned on: {new Date(trip.timestamp).toLocaleDateString()}</p>
+              </div>
+              <div className="flex-shrink-0 text-right">
+                <p className="text-lg font-bold text-indigo-600">{trip.totalDistanceMiles} miles</p>
+                <p className="text-sm text-gray-500">~{trip.totalDays} days</p>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -595,6 +762,7 @@ const App = () => {
                     id="origin"
                     name="origin"
                     type="text"
+                    key="origin-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="Enter origin city or address"
                     value={formData.origin}
@@ -610,6 +778,7 @@ const App = () => {
                     id="destination"
                     name="destination"
                     type="text"
+                    key="destination-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="Enter destination city or address"
                     value={formData.destination}
@@ -625,6 +794,7 @@ const App = () => {
                     id="date"
                     name="date"
                     type="date"
+                    key="date-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     value={formData.date}
                     onChange={handleInputChange}
@@ -639,6 +809,7 @@ const App = () => {
                     id="driverName"
                     name="driverName"
                     type="text"
+                    key="driverName-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="Enter driver's name"
                     value={formData.driverName}
@@ -654,6 +825,7 @@ const App = () => {
                     id="vehicleNumber"
                     name="vehicleNumber"
                     type="text"
+                    key="vehicleNumber-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="e.g., ABC-123"
                     value={formData.vehicleNumber}
@@ -669,6 +841,7 @@ const App = () => {
                     id="cycleUsed"
                     name="cycleUsed"
                     type="number"
+                    key="cycleUsed-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="e.g., 20"
                     value={formData.cycleUsed}
@@ -684,6 +857,7 @@ const App = () => {
                     id="departureTime"
                     name="departureTime"
                     type="time"
+                    key="departureTime-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     value={formData.departureTime}
                     onChange={handleInputChange}
@@ -694,7 +868,7 @@ const App = () => {
                   <button
                     type="submit"
                     className="w-full md:w-auto px-12 py-4 bg-indigo-600 text-white font-semibold rounded-full shadow-lg hover:bg-indigo-700 transition duration-300 transform hover:scale-105 disabled:bg-indigo-400"
-                    disabled={isLoading}
+                    disabled={isLoading || !isAuthReady}
                   >
                     {isLoading ? 'Planning Trip...' : 'Plan Trip'}
                   </button>
