@@ -94,6 +94,18 @@ const App = () => {
           destination: trips[0].destination,
           cycleUsed: trips[0].cycleUsed,
         });
+      } else {
+        // If no data, reset to default state
+        setMapData(null);
+        setLogData([]);
+        setFormData({
+          driverName: '',
+          departureDate: '',
+          departureTime: '',
+          origin: '',
+          destination: '',
+          cycleUsed: '',
+        });
       }
     });
 
@@ -719,7 +731,8 @@ const App = () => {
         const totalDrivingTime = mapData?.totalDrivingTimeHours || 0;
         const totalDistance = mapData?.distance || 0;
         const numDays = mapData?.totalDays || 0;
-        const totalOnDutyTime = mapData?.logSheets?.flat().reduce((total, event) => total + (event.status === 'On Duty' ? (event.endTime - event.startTime) / 60 : 0), 0) || 0;
+        const totalOnDutyTimeMinutes = mapData?.logSheets?.flat().reduce((total, event) => total + (event.status === 'On Duty' ? (event.endTime - event.startTime) : 0), 0) || 0;
+        const totalOnDutyTimeHours = totalOnDutyTimeMinutes / 60;
         return (
           <div className="p-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
@@ -755,7 +768,7 @@ const App = () => {
                         <li className="flex items-center space-x-3">
                             <Gauge className="h-5 w-5 text-orange-500" />
                             <span className="font-medium">On Duty Time:</span>
-                            <span className="text-gray-600">{totalOnDutyTime.toFixed(1)} hours (Pickup, Drop-off, Fuel)</span>
+                            <span className="text-gray-600">{totalOnDutyTimeHours.toFixed(1)} hours (Pickup, Drop-off, Fuel)</span>
                         </li>
                         <li className="flex items-center space-x-3">
                             <Bed className="h-5 w-5 text-blue-500" />
