@@ -20,10 +20,105 @@ const Mapbox = () => {
   return null;
 };
 
+const mockBackendResponse = {
+  route: {
+    distance_miles: 1500,
+    duration_hours: 25,
+    stops: [
+      { type: "rest", location: "Nashville, TN", duration: 10, notes: "Mandatory 10-hour rest break." },
+      { type: "fuel", location: "Memphis, TN", notes: "Fueling and pre-trip inspection." },
+      { type: "rest", location: "Dallas, TX", duration: 8, notes: "Mandatory 8-hour rest break." },
+      { type: "fuel", location: "Austin, TX", notes: "Fueling and post-trip inspection." },
+    ]
+  },
+  logs: [
+    {
+      date: "2025-09-22",
+      log_entries: [
+        { time: "06:00", status: "Off Duty" },
+        { time: "07:00", status: "Driving" },
+        { time: "12:00", status: "On Duty" },
+        { time: "13:00", status: "Off Duty" },
+        { time: "14:00", status: "Driving" },
+        { time: "19:00", status: "On Duty" },
+        { time: "20:00", status: "Sleeper Berth" },
+      ]
+    },
+    {
+      date: "2025-09-23",
+      log_entries: [
+        { time: "05:00", status: "Off Duty" },
+        { time: "06:00", status: "Driving" },
+        { time: "11:00", status: "On Duty" },
+        { time: "12:00", status: "Off Duty" },
+        { time: "13:00", status: "Driving" },
+        { time: "18:00", status: "On Duty" },
+        { time: "19:00", status: "Sleeper Berth" },
+      ]
+    },
+  ]
+};
+
+const DailyLogSheet = ({ date, logEntries, driverName, vehicleNumber }) => {
+  const statuses = ["Off Duty", "Sleeper Berth", "Driving", "On Duty"];
+  const getStatusIndex = (status) => statuses.indexOf(status);
+
+  const renderLogGrid = () => {
+    const grid = Array(statuses.length).fill(null).map(() => Array(24).fill(''));
+    const hours = Array.from({ length: 24 }, (_, i) => i);
+
+    for (let i = 0; i < logEntries.length - 1; i++) {
+      const entry = logEntries[i];
+      const nextEntry = logEntries[i + 1];
+      const startHour = parseInt(entry.time.split(':')[0]);
+      const endHour = parseInt(nextEntry.time.split(':')[0]);
+      const statusIndex = getStatusIndex(entry.status);
+
+      for (let h = startHour; h < endHour; h++) {
+        grid[statusIndex][h] = 'filled';
+      }
+    }
+    return (
+      <div className="relative border border-gray-300 rounded-lg overflow-hidden">
+        <div className="flex bg-gray-100 text-xs font-medium border-b border-gray-300">
+          <div className="w-16 px-2 py-1 text-center border-r border-gray-300">Status</div>
+          {hours.map(h => (
+            <div key={h} className="flex-1 py-1 text-center border-r border-gray-300">{h}</div>
+          ))}
+        </div>
+        <div className="flex flex-col">
+          {statuses.map((status, i) => (
+            <div key={status} className="flex border-b border-gray-300 last:border-b-0">
+              <div className="w-16 px-2 py-1 flex items-center justify-center text-[10px] text-gray-600 border-r border-gray-300">{status}</div>
+              {hours.map(h => (
+                <div key={h} className={`flex-1 h-8 border-r border-gray-300 ${grid[i][h] === 'filled' ? 'bg-blue-200' : ''}`}></div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-6 bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+          <StickyNote size={20} /> Daily Log Sheet
+        </h3>
+        <span className="text-sm text-gray-500">{new Date(date).toLocaleDateString()}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-4 mb-4 text-sm text-gray-700">
+        <div><span className="font-semibold">Driver:</span> {driverName}</div>
+        <div><span className="font-semibold">Vehicle:</span> {vehicleNumber}</div>
+      </div>
+      {renderLogGrid()}
+    </div>
+  );
+};
+
 const App = () => {
-  // State management for UI tabs and form data
   const [activeTab, setActiveTab] = useState('home');
-  const [currentLocation, setCurrentLocation] = useState('');
   const [formData, setFormData] = useState({
     origin: '',
     destination: '',
@@ -31,20 +126,12 @@ const App = () => {
     driverName: '',
     vehicleNumber: '',
     cycleUsed: '',
-    departureTime: '',
   });
 
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
-  const [mapData, setMapData] = useState(null);
-  const [logData, setLogData] = useState([]);
-  const [logRemarks, setLogRemarks] = useState({});
   const [isLoading, setIsLoading] = useState(false);
-  const [isLocating, setIsLocating] = useState(false);
-  const [locationStatus, setLocationStatus] = useState(null);
   const [tripLogs, setTripLogs] = useState([]);
-
-  // State for Firebase and Mapbox
   const [db, setDb] = useState(null);
   const [auth, setAuth] = useState(null);
   const [userId, setUserId] = useState(null);
@@ -53,7 +140,7 @@ const App = () => {
   // Firestore & Auth initialization
   useEffect(() => {
     try {
-      setLogLevel('debug'); // Enable Firestore debug logging
+      setLogLevel('debug');
       const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
       const app = initializeApp(firebaseConfig);
       const firestore = getFirestore(app);
@@ -67,7 +154,6 @@ const App = () => {
           // Only fetch data after the user is authenticated
           fetchTripLogs(firestore, user.uid);
         } else {
-          // If no auth token, sign in anonymously.
           const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
           if (initialAuthToken) {
             signInWithCustomToken(authentication, initialAuthToken).catch(console.error);
@@ -101,7 +187,6 @@ const App = () => {
     return () => unsubscribe();
   };
 
-  // UI Handlers
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prevData => ({ ...prevData, [name]: value }));
@@ -122,11 +207,12 @@ const App = () => {
         ...formData,
         createdAt: new Date(),
         userId: userId,
+        ...mockBackendResponse // Add the mock backend data to Firestore
       });
       setMessage("Trip created successfully!");
       setMessageType("success");
-      // Optionally reset form
-      setFormData({ origin: '', destination: '', date: '', driverName: '', vehicleNumber: '', cycleUsed: '', departureTime: '' });
+      setFormData({ origin: '', destination: '', date: '', driverName: '', vehicleNumber: '', cycleUsed: '' });
+      setActiveTab('logs');
     } catch (error) {
       console.error("Error adding document:", error);
       setMessage("Failed to create trip. Please try again.");
@@ -193,7 +279,6 @@ const App = () => {
                     <h2 className="text-2xl font-bold text-indigo-800 mb-4 flex items-center gap-2"><Info size={24} />Trip Details</h2>
                     <p className="text-indigo-700">Fill out the form below to get your route instructions and daily logs.</p>
                   </div>
-
                   <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); handleCreateTrip(); }}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
@@ -221,9 +306,7 @@ const App = () => {
                         <input type="date" id="date" name="date" value={formData.date} onChange={handleInputChange} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 transition" required />
                       </div>
                     </div>
-
                     <Message text={message} type={messageType} />
-
                     <button type="submit" className="w-full py-3 px-6 bg-indigo-600 text-white rounded-lg shadow-lg hover:bg-indigo-700 transition-colors duration-300 font-semibold flex items-center justify-center gap-2" disabled={isLoading}>
                       {isLoading ? <Loader size={20} className="animate-spin" /> : <ListChecks size={20} />}
                       {isLoading ? 'Creating Trip...' : 'Create Trip & View Logs'}
@@ -231,37 +314,79 @@ const App = () => {
                   </form>
                 </div>
               )}
-
               {activeTab === 'logs' && (
                 <div className="space-y-6">
                   <div className="p-6 bg-blue-50 rounded-lg shadow-inner">
                     <h2 className="text-2xl font-bold text-blue-800 mb-4 flex items-center gap-2"><ListChecks size={24} />Daily Logs</h2>
-                    <p className="text-blue-700">Here you can view and print your automatically generated daily logs.</p>
+                    <p className="text-blue-700">Here you can view your automatically generated daily logs.</p>
                   </div>
                   {tripLogs.length === 0 ? (
                     <div className="text-center p-8 text-gray-500">No trips created yet.</div>
                   ) : (
                     <div className="space-y-4">
-                      {tripLogs.map(log => (
-                        <div key={log.id} className="p-6 bg-gray-100 rounded-lg shadow-sm">
-                          <h3 className="text-lg font-bold text-gray-800">{log.driverName}'s Trip Log</h3>
-                          <p className="text-sm text-gray-600 mt-1">From <span className="font-semibold">{log.origin}</span> to <span className="font-semibold">{log.destination}</span></p>
-                          <p className="text-sm text-gray-600">On <span className="font-semibold">{new Date(log.date).toLocaleDateString()}</span></p>
-                        </div>
+                      {tripLogs.map((log) => (
+                        <DailyLogSheet
+                          key={log.id}
+                          date={log.date}
+                          logEntries={log.logs[0].log_entries}
+                          driverName={log.driverName}
+                          vehicleNumber={log.vehicleNumber}
+                        />
                       ))}
                     </div>
                   )}
                 </div>
               )}
-
               {activeTab === 'reports' && (
                 <div className="space-y-6">
                   <div className="p-6 bg-green-50 rounded-lg shadow-inner">
                     <h2 className="text-2xl font-bold text-green-800 mb-4 flex items-center gap-2"><TrendingUp size={24} />Reports</h2>
                     <p className="text-green-700">View performance reports and historical data for your trips.</p>
                   </div>
-                  <div className="text-center p-8 text-gray-500">
-                    <p>This section is under construction. Check back soon!</p>
+                  <div className="space-y-6">
+                    {tripLogs.length === 0 ? (
+                      <div className="text-center p-8 text-gray-500">No trips created yet.</div>
+                    ) : (
+                      <div className="p-6 bg-white rounded-lg shadow-sm">
+                        <h3 className="text-xl font-bold mb-4">Trip Summary</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          <div className="flex items-center gap-2 p-4 bg-gray-100 rounded-lg">
+                            <Clock size={24} className="text-indigo-500" />
+                            <div>
+                              <p className="text-sm text-gray-500">Total Driving Hours</p>
+                              <p className="font-semibold text-lg">{tripLogs[0].route.duration_hours} hrs</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 p-4 bg-gray-100 rounded-lg">
+                            <Gauge size={24} className="text-orange-500" />
+                            <div>
+                              <p className="text-sm text-gray-500">Total Miles</p>
+                              <p className="font-semibold text-lg">{tripLogs[0].route.distance_miles} miles</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 p-4 bg-gray-100 rounded-lg">
+                            <Bed size={24} className="text-red-500" />
+                            <div>
+                              <p className="text-sm text-gray-500">Scheduled Rests</p>
+                              <p className="font-semibold text-lg">{tripLogs[0].route.stops.filter(s => s.type === 'rest').length} stops</p>
+                            </div>
+                          </div>
+                        </div>
+                        <h3 className="text-xl font-bold mt-8 mb-4">Trip Route & Stops</h3>
+                        <ul className="space-y-4">
+                          {tripLogs[0].route.stops.map((stop, index) => (
+                            <li key={index} className="flex items-start gap-3 p-4 bg-gray-100 rounded-lg shadow-sm">
+                              <MapPin size={24} className="text-green-600 flex-shrink-0 mt-1" />
+                              <div>
+                                <h4 className="font-semibold text-lg flex items-center gap-2">{stop.location}</h4>
+                                <p className="text-sm text-gray-600">{stop.notes}</p>
+                                {stop.type === 'rest' && <p className="text-xs text-gray-500 mt-1">Duration: {stop.duration} hrs</p>}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
