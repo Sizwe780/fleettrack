@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import API from '../services/api';
-import Navbar from '/components/Navbar';
+import Navbar from '../components/NavBar';
 
 const Dashboard = () => {
   const [trips, setTrips] = useState([]);
