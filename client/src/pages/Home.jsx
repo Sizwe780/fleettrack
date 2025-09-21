@@ -6,7 +6,7 @@ import Navbar from './Navbar';
 const Home = () => {
   const navigate = useNavigate();
 
-  // Form state (excluding currentLocation)
+  // Form fields (excluding location)
   const [formData, setFormData] = useState({
     driverName: '',
     pickupLocation: '',
@@ -15,7 +15,7 @@ const Home = () => {
     departure: ''
   });
 
-  // Geolocation state
+  // Location state
   const [currentLocation, setCurrentLocation] = useState('');
   const [locationDetected, setLocationDetected] = useState(false);
 
@@ -23,12 +23,12 @@ const Home = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Get geolocation once on mount
+  // Detect location once on mount
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        setCurrentLocation(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+      ({ coords }) => {
+        const location = `${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`;
+        setCurrentLocation(location);
         setLocationDetected(true);
       },
       (err) => {
@@ -41,8 +41,8 @@ const Home = () => {
   }, []);
 
   // Handle input changes
-  const handleChange = (e) => {
-    const { name, value } = e.target;
+  const handleChange = ({ target }) => {
+    const { name, value } = target;
     setFormData((prev) => ({
       ...prev,
       [name]: value
@@ -64,7 +64,7 @@ const Home = () => {
       await API.post('/trips', payload);
       navigate('/dashboard');
     } catch (err) {
-      console.error('Trip submission failed:', err);
+      console.error('Submission failed:', err);
       setError('Trip submission failed. Please try again.');
     } finally {
       setLoading(false);
@@ -74,81 +74,83 @@ const Home = () => {
   return (
     <>
       <Navbar />
-      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center px-4">
+      <main className="min-h-screen bg-gray-100 flex flex-col items-center justify-center px-4">
         <h1 className="text-2xl font-bold mb-6">Welcome, ready to log your trip? ✨</h1>
 
-        {error && (
-          <div className="mb-4 text-red-600 font-medium">{error}</div>
-        )}
+        {error && <div className="mb-4 text-red-600 font-medium">{error}</div>}
 
         <form
           onSubmit={handleSubmit}
-          className="bg-white shadow-lg rounded-xl p-6 w-full max-w-4xl grid grid-cols-2 gap-6 relative z-50"
+          className="bg-white shadow-lg rounded-xl p-6 w-full max-w-4xl grid grid-cols-2 gap-6 relative z-10"
         >
           {/* Left Column */}
           <div className="flex flex-col space-y-4">
-            <div>
-              <label className="block text-sm font-medium">Driver Name</label>
+            <label className="block text-sm font-medium">
+              Driver Name
               <input
                 type="text"
                 name="driverName"
                 value={formData.driverName}
                 onChange={handleChange}
-                className="w-full border p-2 rounded"
+                className="w-full border p-2 rounded mt-1"
                 required
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Departure Date & Time</label>
+            </label>
+
+            <label className="block text-sm font-medium">
+              Departure Date & Time
               <input
                 type="datetime-local"
                 name="departure"
                 value={formData.departure}
                 onChange={handleChange}
-                className="w-full border p-2 rounded"
+                className="w-full border p-2 rounded mt-1"
                 required
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Origin</label>
+            </label>
+
+            <label className="block text-sm font-medium">
+              Origin
               <input
                 type="text"
                 name="pickupLocation"
                 value={formData.pickupLocation}
                 onChange={handleChange}
-                className="w-full border p-2 rounded"
+                className="w-full border p-2 rounded mt-1"
                 required
               />
-            </div>
+            </label>
           </div>
 
           {/* Right Column */}
           <div className="flex flex-col space-y-4">
-            <div>
-              <label className="block text-sm font-medium">Cycle Used (hrs)</label>
+            <label className="block text-sm font-medium">
+              Cycle Used (hrs)
               <input
                 type="number"
                 name="cycleHours"
                 value={formData.cycleHours}
                 onChange={handleChange}
-                className="w-full border p-2 rounded"
+                className="w-full border p-2 rounded mt-1"
                 required
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Destination</label>
+            </label>
+
+            <label className="block text-sm font-medium">
+              Destination
               <input
                 type="text"
                 name="dropoffLocation"
                 value={formData.dropoffLocation}
                 onChange={handleChange}
-                className="w-full border p-2 rounded"
+                className="w-full border p-2 rounded mt-1"
                 required
               />
-            </div>
+            </label>
+
             <div className="flex items-center space-x-2 mt-2">
-              <span className="block text-sm font-medium">Location</span>
-              <span className={`w-3 h-3 rounded-full ${locationDetected ? 'bg-green-500' : 'bg-red-500'}`}></span>
+              <span className="text-sm font-medium">Location</span>
+              <span className={`w-3 h-3 rounded-full ${locationDetected ? 'bg-green-500' : 'bg-red-500'}`} />
             </div>
           </div>
 
@@ -164,11 +166,10 @@ const Home = () => {
           </div>
         </form>
 
-        {/* Footer */}
-        <div className="mt-6 text-sm text-gray-600">
+        <footer className="mt-6 text-sm text-gray-600">
           sizwe.ngwenya7@gmail.com
-        </div>
-      </div>
+        </footer>
+      </main>
     </>
   );
 };
