@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote } from 'lucide-react';
+import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote, Fuel, Bed } from 'lucide-react';
 import { createRoot } from 'react-dom/client';
 
 const App = () => {
@@ -17,7 +17,8 @@ const App = () => {
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
   const [mapData, setMapData] = useState(null);
-  const [logData, setLogData] = useState(null);
+  const [logData, setLogData] = useState([]);
+  const [logRemarks, setLogRemarks] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [locationStatus, setLocationStatus] = useState(null);
@@ -32,18 +33,27 @@ const App = () => {
     }));
   };
 
+  const handleRemarkChange = (dayIndex, value) => {
+    setLogRemarks(prevRemarks => ({
+      ...prevRemarks,
+      [dayIndex]: value
+    }));
+    // Update the remarks in the main log data state as well
+    setLogData(prevLogs => {
+      const newLogs = [...prevLogs];
+      newLogs[dayIndex] = { ...newLogs[dayIndex], remarks: value };
+      return newLogs;
+    });
+  };
+
   const handleGetCurrentLocation = () => {
     setIsLocating(true);
     setLocationStatus(null);
     setMessage('');
-
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
-          setMessage('Location found successfully!');
-          setMessageType('success');
-          
           fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${MAPBOX_ACCESS_TOKEN}`)
             .then(response => response.json())
             .then(data => {
@@ -80,70 +90,138 @@ const App = () => {
     }
   };
 
+  const calculateHOS = (totalDistanceMiles) => {
+    const speed = 50; // Average truck speed in mph
+    const totalDrivingHours = totalDistanceMiles / speed;
+    const initialCycleHours = parseFloat(formData.cycleUsed) || 0;
+    const driverCycle = 70; // 70 hours over 8 days
+    const dailyDrivingLimit = 11;
+    const dailyOnDutyLimit = 14;
+    const dailyOffDutyRequired = 10;
+    const maxFuelDistance = 1000;
+
+    let remainingCycleHours = driverCycle - initialCycleHours;
+    let days = 1;
+    let distanceCovered = 0;
+    let logs = [];
+    let stops = [];
+
+    while (distanceCovered < totalDistanceMiles && remainingCycleHours > 0 && days <= 8) {
+      let dailyDriving = Math.min(dailyDrivingLimit, totalDrivingHours - (distanceCovered / speed));
+      let dailyOnDuty = Math.min(dailyOnDutyLimit, dailyDriving + 2); // 2 hours for stops/inspections
+      
+      let offDuty = Math.max(0, 24 - dailyOnDuty);
+      if (offDuty < dailyOffDutyRequired) {
+        offDuty = dailyOffDutyRequired;
+        dailyOnDuty = 24 - offDuty;
+        dailyDriving = Math.min(dailyDriving, dailyOnDuty - 2);
+      }
+
+      if (remainingCycleHours < dailyOnDuty) {
+        dailyOnDuty = remainingCycleHours;
+        dailyDriving = Math.min(dailyDriving, dailyOnDuty - 2);
+        if (dailyDriving < 0) dailyDriving = 0;
+      }
+      
+      remainingCycleHours -= dailyOnDuty;
+      distanceCovered += dailyDriving * speed;
+
+      const log = {
+        day: days,
+        driving: dailyDriving.toFixed(2),
+        onDuty: dailyOnDuty.toFixed(2),
+        offDuty: offDuty.toFixed(2),
+        sleeperBerth: 0,
+        remarks: '',
+        date: new Date(new Date(formData.date).setDate(new Date(formData.date).getDate() + days - 1)).toISOString().slice(0, 10),
+        driverName: formData.driverName,
+        vehicleNumber: formData.vehicleNumber,
+      };
+      logs.push(log);
+      days++;
+
+      if (distanceCovered >= maxFuelDistance * stops.filter(s => s.type === 'fuel').length + maxFuelDistance) {
+        stops.push({ name: `Fuel Stop (Day ${days - 1})`, type: 'fuel', day: days - 1 });
+      }
+      if (log.onDuty > 12) {
+        stops.push({ name: `Rest Stop (Day ${days - 1})`, type: 'rest', day: days - 1 });
+      }
+    }
+
+    return { logs, stops };
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     setMessage('');
     setMessageType('');
     setIsLoading(true);
 
-    const generateMockLogs = (startCycleHrs) => {
-      const logs = [];
-      let totalOnDuty = Number(startCycleHrs);
-      let day = 1;
-
-      while (totalOnDuty < 70) {
-        const drivingHrs = Math.min(11, 70 - totalOnDuty - 2);
-        const onDutyHrs = Math.min(14 - drivingHrs, 70 - totalOnDuty - drivingHrs);
-        const offDutyHrs = Math.max(10, 24 - drivingHrs - onDutyHrs);
-        const sleeperBerthHrs = 0;
-
-        logs.push({
-          day,
-          driving: drivingHrs,
-          onDuty: onDutyHrs,
-          offDuty: offDutyHrs,
-          sleeperBerth: sleeperBerthHrs,
-          date: new Date(new Date().setDate(new Date().getDate() + day - 1)).toISOString().slice(0, 10),
-          remarks: 'Trip started as planned.',
-          driverName: formData.driverName,
-          vehicleNumber: formData.vehicleNumber,
+    const geocode = (location) => {
+      return fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(location)}.json?access_token=${MAPBOX_ACCESS_TOKEN}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.features.length > 0) {
+            return data.features[0].geometry.coordinates;
+          }
+          throw new Error(`Could not find coordinates for ${location}`);
         });
-        totalOnDuty += onDutyHrs;
-        day++;
-      }
-      return logs;
     };
 
-    try {
-      const mockLogs = generateMockLogs(Number(formData.cycleUsed));
-      const mockApiResponse = {
-        routePolyline: 's~gpGt_l`Thk`G~{a@~naI_u`E',
-        stops: [
-          { name: 'Fuel Stop', lat: 38.8951, lng: -77.0364, type: 'fuel' },
-          { name: 'Rest Area', lat: 39.9526, lng: -75.1652, type: 'rest' },
-          { name: 'Fuel & Rest Stop', lat: 41.8781, lng: -87.6298, type: 'both' },
-        ],
-        eldLogs: mockLogs,
-      };
+    const getRoute = async () => {
+      try {
+        const [originCoords, destinationCoords] = await Promise.all([
+          geocode(formData.origin),
+          geocode(formData.destination)
+        ]);
 
-      setMapData(mockApiResponse);
-      setLogData(mockApiResponse.eldLogs);
-      setMessage('Trip planned successfully! Check the Map and Logs tabs.');
-      setMessageType('success');
-      setActiveTab('map');
-    } catch (error) {
-      console.error('Submission failed:', error.message);
-      setMessage(`Failed to plan trip. Error: ${error.message}`);
-      setMessageType('error');
-    } finally {
-      setIsLoading(false);
-    }
+        const routeUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords[0]},${originCoords[1]};${destinationCoords[0]},${destinationCoords[1]}?geometries=polyline6&access_token=${MAPBOX_ACCESS_TOKEN}`;
+        const routeRes = await fetch(routeUrl);
+        const routeData = await routeRes.json();
+        
+        if (routeData.routes && routeData.routes.length > 0) {
+          const route = routeData.routes[0];
+          const totalDistanceMiles = route.distance / 1609.34; // Convert meters to miles
+          
+          const { logs, stops } = calculateHOS(totalDistanceMiles);
+
+          setMapData({
+            routePolyline: route.geometry,
+            stops: stops.map(stop => {
+              const routePoint = Math.floor(Math.random() * route.geometry.length);
+              return {
+                ...stop,
+                lat: route.geometry[routePoint][1],
+                lng: route.geometry[routePoint][0],
+              };
+            })
+          });
+          setLogData(logs);
+          setLogRemarks(Object.fromEntries(logs.map((log, index) => [index, ''])));
+
+          setMessage('Trip planned successfully! Check the Map and Logs tabs.');
+          setMessageType('success');
+          setActiveTab('map');
+        } else {
+          throw new Error('No routes found.');
+        }
+
+      } catch (error) {
+        console.error('Trip planning failed:', error);
+        setMessage(`Failed to plan trip: ${error.message}`);
+        setMessageType('error');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    getRoute();
   };
 
   const TripMap = () => {
     const mapContainer = useRef(null);
     const map = useRef(null);
-
+  
     useEffect(() => {
       if (!mapData || !window.mapboxgl || !mapContainer.current) {
         return;
@@ -153,7 +231,7 @@ const App = () => {
         map.current.remove();
         map.current = null;
       }
-
+  
       window.mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
       map.current = new window.mapboxgl.Map({
         container: mapContainer.current,
@@ -161,7 +239,7 @@ const App = () => {
         center: [-98.5833, 39.8333],
         zoom: 3,
       });
-
+  
       map.current.on('load', () => {
         const coordinates = window.mapboxgl.GeometryUtil.decode(mapData.routePolyline);
         
@@ -190,18 +268,19 @@ const App = () => {
               'line-width': 6
             }
           });
-
+  
           const bounds = new window.mapboxgl.LngLatBounds();
           coordinates.forEach(coord => {
             bounds.extend(coord);
           });
           map.current.fitBounds(bounds, { padding: 50 });
         }
-
+  
         mapData.stops.forEach(stop => {
-          new window.mapboxgl.Marker()
+          const markerColor = stop.type === 'fuel' ? '#f59e0b' : '#10b981';
+          new window.mapboxgl.Marker({ color: markerColor })
             .setLngLat([stop.lng, stop.lat])
-            .setPopup(new window.mapboxgl.Popup({ offset: 25 }).setHTML(`<h3>${stop.name}</h3><p>Type: ${stop.type}</p>`))
+            .setPopup(new window.mapboxgl.Popup({ offset: 25 }).setHTML(`<h3>${stop.name}</h3>`))
             .addTo(map.current);
         });
       });
@@ -213,7 +292,7 @@ const App = () => {
         }
       };
     }, [mapData]);
-
+  
     if (!mapData) {
       return (
         <div className="flex items-center justify-center h-96 p-8 text-center text-gray-500">
@@ -245,6 +324,7 @@ const App = () => {
               .remarks-section { margin-top: 20px; border-top: 1px solid black; padding-top: 10px; }
               .signature { margin-top: 30px; border-top: 1px solid black; padding-top: 5px; width: 250px; }
               .no-print { display: none; }
+              p { margin: 0; }
             }
           </style>
         </head>
@@ -256,7 +336,7 @@ const App = () => {
       `);
       const printContent = printWindow.document.getElementById('print-content');
       
-      logData.forEach((log) => {
+      logData.forEach((log, index) => {
         const logContainer = document.createElement('div');
         logContainer.className = 'log-sheet';
         
@@ -276,7 +356,7 @@ const App = () => {
         remarksSection.className = 'remarks-section';
         remarksSection.innerHTML = `
           <strong>Remarks:</strong>
-          <p>${log.remarks}</p>
+          <p>${logRemarks[index] || ''}</p>
         `;
 
         const signatureSection = document.createElement('div');
@@ -297,7 +377,7 @@ const App = () => {
     };
     
     useEffect(() => {
-      if (logData) {
+      if (logData && logData.length > 0) {
         logData.forEach((log, index) => {
           const canvas = document.getElementById(`log-canvas-${index}`);
           if (canvas) {
@@ -305,7 +385,7 @@ const App = () => {
           }
         });
       }
-    }, [logData]);
+    }, [logData, logRemarks]);
   
     const drawLogSheet = (canvas, log) => {
       if (!canvas) return;
@@ -410,7 +490,7 @@ const App = () => {
           {logData.map((log, index) => (
             <div key={index} className="flex flex-col items-center border-b pb-8 last:border-b-0">
               <div className="w-full text-center mb-6">
-                <p className="text-lg font-semibold">Driver: {log.driverName}</p>
+                <p className="text-lg font-semibold">Day {log.day}: {log.driverName}</p>
                 <p className="text-sm text-gray-600">Vehicle: {log.vehicleNumber} | Date: {log.date}</p>
               </div>
               <canvas
@@ -423,7 +503,13 @@ const App = () => {
                 <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2 mb-2">
                   <StickyNote size={16} /> Remarks:
                 </h4>
-                <p className="text-gray-800 text-sm">{log.remarks}</p>
+                <textarea
+                  className="w-full p-2 text-sm text-gray-800 border-none bg-transparent focus:ring-0 focus:border-0 resize-none"
+                  rows="2"
+                  value={logRemarks[index]}
+                  onChange={(e) => handleRemarkChange(index, e.target.value)}
+                  placeholder="Add your remarks here..."
+                ></textarea>
               </div>
               <div className="w-full mt-6 text-right">
                 <span className="text-sm text-gray-600">Driver Signature:</span>
@@ -441,6 +527,20 @@ const App = () => {
       </div>
     );
   };
+
+  const Reports = () => {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 bg-white rounded-2xl shadow-xl">
+        <h2 className="text-3xl font-bold text-center text-gray-900 mb-4">Trip Reports</h2>
+        <p className="text-center text-gray-600 mb-8">
+          This section will provide detailed analytics and reports for your past trips.
+        </p>
+        <div className="p-8 bg-gray-50 rounded-lg w-full text-center text-gray-500">
+          <p>Reports feature coming soon!</p>
+        </div>
+      </div>
+    );
+  };
   
 
   const TabContent = () => {
@@ -455,7 +555,7 @@ const App = () => {
               <p className="text-center text-gray-600 mb-8 text-base">
                 Enter the details below to begin your journey.
               </p>
-              <form onSubmit={handleSubmit} key={activeTab} className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+              <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
                 <div className="md:col-span-2 flex flex-col items-center justify-center gap-4">
                   <div className="flex items-center gap-4">
                     <label className="text-base font-semibold text-gray-700 flex items-center gap-2">
@@ -615,6 +715,8 @@ const App = () => {
         return <TripMap />;
       case 'logs':
         return <ELDLogSheet />;
+      case 'reports':
+        return <Reports />;
       default:
         return null;
     }
