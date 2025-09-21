@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Truck, MapPin, Star, User, Clock, Calendar, Globe, Gauge } from 'lucide-react';
+import { Truck, MapPin, Star, User, Clock, Calendar, Globe, Gauge, CheckCircle, XCircle } from 'lucide-react';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
@@ -12,6 +12,8 @@ const App = () => {
   const [cycleUsed, setCycleUsed] = useState('');
   const [departureTime, setDepartureTime] = useState('');
   const [locationStatus, setLocationStatus] = useState('pending');
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState(''); // 'success' or 'error'
 
   // Request geolocation on component mount
   useEffect(() => {
@@ -34,6 +36,17 @@ const App = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setMessage('');
+    setMessageType('');
+
+    // Check if the API URL environment variable is set
+    const apiUrl = process.env.REACT_APP_API_URL;
+    if (!apiUrl) {
+      setMessage('API URL is not configured. Please set REACT_APP_API_URL in your environment variables.');
+      setMessageType('error');
+      return;
+    }
+
     const tripData = {
       origin,
       destination,
@@ -44,7 +57,7 @@ const App = () => {
       departure_time: departureTime,
     };
     try {
-      await axios.post(`${process.env.REACT_APP_API_URL}/api/trips/`, tripData);
+      await axios.post(`${apiUrl}/api/trips/`, tripData);
       setOrigin('');
       setDestination('');
       setDate('');
@@ -52,10 +65,12 @@ const App = () => {
       setCurrentLocation('');
       setCycleUsed('');
       setDepartureTime('');
-      alert('Trip submitted successfully!');
+      setMessage('Trip submitted successfully!');
+      setMessageType('success');
     } catch (error) {
       console.error('Submission failed:', error.response?.data || error.message);
-      alert('Failed to submit trip.');
+      setMessage('Failed to submit trip. Please try again.');
+      setMessageType('error');
     }
   };
 
@@ -200,6 +215,15 @@ const App = () => {
                   </button>
                 </div>
               </form>
+
+              {message && (
+                <div className={`mt-6 p-4 rounded-lg flex items-center justify-center gap-2 ${
+                  messageType === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                }`}>
+                  {messageType === 'success' ? <CheckCircle size={20} /> : <XCircle size={20} />}
+                  <span>{message}</span>
+                </div>
+              )}
             </div>
           </div>
         );
