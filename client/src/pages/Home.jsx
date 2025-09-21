@@ -6,6 +6,7 @@ import Navbar from './Navbar';
 const Home = () => {
   const navigate = useNavigate();
 
+  // Form state (excluding currentLocation)
   const [formData, setFormData] = useState({
     driverName: '',
     pickupLocation: '',
@@ -14,12 +15,15 @@ const Home = () => {
     departure: ''
   });
 
+  // Geolocation state
   const [currentLocation, setCurrentLocation] = useState('');
   const [locationDetected, setLocationDetected] = useState(false);
+
+  // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Only set location once, never overwrite formData
+  // Get geolocation once on mount
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -36,6 +40,7 @@ const Home = () => {
     );
   }, []);
 
+  // Handle input changes
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
@@ -44,6 +49,7 @@ const Home = () => {
     }));
   };
 
+  // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
