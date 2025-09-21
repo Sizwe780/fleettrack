@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
-import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader } from 'lucide-react';
+import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer } from 'lucide-react';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
@@ -92,7 +91,7 @@ const App = () => {
     // Using mock data to simulate the backend response
     try {
       const mockApiResponse = {
-        routePolyline: '-_}pGj_l`T~_aO}v_aP_b`D',
+        routePolyline: 's~gpGt_l`Thk`G~{a@~naI_u`E',
         stops: [
           { name: 'Fuel Stop 1', lat: 34.052235, lng: -118.243683, type: 'fuel' },
           { name: 'Rest Area', lat: 35.151774, lng: -115.584347, type: 'rest' },
@@ -125,58 +124,66 @@ const App = () => {
     const map = useRef(null);
 
     useEffect(() => {
-      if (!mapData || !window.mapboxgl) {
+      // Check if Mapbox is available and map data exists
+      if (!window.mapboxgl || !mapData) {
         return;
       }
 
-      if (map.current) {
-        map.current.remove();
-        map.current = null;
+      // Initialize the map only once
+      if (!map.current) {
+        window.mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
+        map.current = new window.mapboxgl.Map({
+          container: mapContainer.current,
+          style: 'mapbox://styles/mapbox/streets-v11',
+          center: [-98.5833, 39.8333],
+          zoom: 3,
+        });
+
+        // Cleanup on component unmount
+        return () => {
+          if (map.current) {
+            map.current.remove();
+            map.current = null;
+          }
+        };
       }
 
-      window.mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
-
-      map.current = new window.mapboxgl.Map({
-        container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/streets-v11',
-        center: [-98.5833, 39.8333],
-        zoom: 3
-      });
-
+      // Add route data when the map is loaded and mapData is available
       map.current.on('load', () => {
         if (map.current.getSource('route')) {
           map.current.removeLayer('route');
           map.current.removeSource('route');
         }
 
-        map.current.addSource('route', {
-          'type': 'geojson',
-          'data': {
-            'type': 'Feature',
-            'properties': {},
-            'geometry': {
-              'type': 'LineString',
-              'coordinates': window.mapboxgl.GeometryUtil.decode(mapData)
-            }
-          }
-        });
-
-        map.current.addLayer({
-          'id': 'route',
-          'type': 'line',
-          'source': 'route',
-          'layout': {
-            'line-join': 'round',
-            'line-cap': 'round'
-          },
-          'paint': {
-            'line-color': '#1E40AF',
-            'line-width': 6
-          }
-        });
-        
         const coordinates = window.mapboxgl.GeometryUtil.decode(mapData);
+
         if (coordinates.length > 0) {
+          map.current.addSource('route', {
+            'type': 'geojson',
+            'data': {
+              'type': 'Feature',
+              'properties': {},
+              'geometry': {
+                'type': 'LineString',
+                'coordinates': coordinates
+              }
+            }
+          });
+
+          map.current.addLayer({
+            'id': 'route',
+            'type': 'line',
+            'source': 'route',
+            'layout': {
+              'line-join': 'round',
+              'line-cap': 'round'
+            },
+            'paint': {
+              'line-color': '#1E40AF',
+              'line-width': 6
+            }
+          });
+
           const bounds = new window.mapboxgl.LngLatBounds();
           coordinates.forEach(coord => {
             bounds.extend(coord);
@@ -184,23 +191,66 @@ const App = () => {
           map.current.fitBounds(bounds, { padding: 50 });
         }
       });
-      return () => {
-        if (map.current) {
-          map.current.remove();
-          map.current = null;
-        }
-      };
     }, [mapData]);
 
     if (!mapData) {
       return <div className="p-8 text-center text-gray-500">Submit a trip to see the map!</div>;
     }
-    return <div ref={mapContainer} className="h-[600px] w-full rounded-xl shadow-lg" />;
+    return <div ref={mapContainer} className="h-[600px] w-full rounded-2xl shadow-xl" />;
   };
 
   const ELDLogSheet = () => {
+    const handlePrint = () => {
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <title>ELD Log Sheets</title>
+          <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+          <style>
+            @media print {
+              body {
+                background-color: #fff;
+              }
+              .log-sheet {
+                page-break-after: always;
+              }
+            }
+          </style>
+        </head>
+        <body class="p-8">
+          <h1 class="text-3xl font-bold text-center mb-6">Daily ELD Log Sheets</h1>
+          ${logData.map(log => `
+            <div class="log-sheet mb-8 p-6 border rounded-lg shadow-md">
+              <h2 class="text-xl font-semibold mb-4">Day ${log.day}: ${log.date}</h2>
+              <div class="flex justify-between text-sm font-medium text-gray-600 mb-2">
+                <span>Driving: ${log.driving} hrs</span>
+                <span>On Duty: ${log.onDuty} hrs</span>
+                <span>Off Duty: ${log.offDuty} hrs</span>
+                <span>Sleeper Berth: ${log.sleeperBerth} hrs</span>
+              </div>
+              <div class="flex w-full h-8 rounded-lg overflow-hidden border border-gray-300">
+                <div class="bg-blue-500 text-white text-xs flex items-center justify-center w-[${(log.driving / 24) * 100}%]">Driving</div>
+                <div class="bg-yellow-500 text-gray-800 text-xs flex items-center justify-center w-[${(log.onDuty / 24) * 100}%]">On Duty</div>
+                <div class="bg-purple-500 text-white text-xs flex items-center justify-center w-[${(log.sleeperBerth / 24) * 100}%]">Sleeper Berth</div>
+                <div class="bg-green-500 text-white text-xs flex items-center justify-center w-[${(log.offDuty / 24) * 100}%]">Off Duty</div>
+              </div>
+            </div>
+          `).join('')}
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.print();
+    };
+
     if (!logData || logData.length === 0) {
-      return <div className="p-8 text-center text-gray-500">No ELD log data available. Submit a trip to generate logs.</div>;
+      return (
+        <div className="flex flex-col items-center p-8 text-center text-gray-500">
+          <p className="mb-4">No ELD log data available. Submit a trip to generate logs.</p>
+        </div>
+      );
     }
 
     const maxHours = 24;
@@ -227,22 +277,30 @@ const App = () => {
     };
 
     return (
-      <div className="flex flex-col gap-8 p-6 bg-white rounded-xl shadow-2xl">
-        <h2 className="text-2xl font-bold text-center text-gray-900">Daily ELD Log Sheets</h2>
-        {logData.map((log) => (
-          <div key={log.day} className="border-b pb-6 last:border-b-0">
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Day {log.day}: {log.date}</h3>
-            <div className="flex flex-col gap-2">
-              <div className="flex justify-between text-sm font-medium text-gray-600">
-                <span>Driving: {log.driving} hrs</span>
-                <span>On Duty: {log.onDuty} hrs</span>
-                <span>Off Duty: {log.offDuty} hrs</span>
-                <span>Sleeper Berth: {log.sleeperBerth} hrs</span>
+      <div className="flex flex-col items-center gap-8 p-6 bg-white rounded-2xl shadow-xl">
+        <h2 className="text-3xl font-bold text-center text-gray-900">Daily ELD Log Sheets</h2>
+        <div className="w-full space-y-6">
+          {logData.map((log) => (
+            <div key={log.day} className="border-b pb-6 last:border-b-0">
+              <h3 className="text-xl font-semibold text-gray-800 mb-4">Day {log.day}: {log.date}</h3>
+              <div className="flex flex-col gap-2">
+                <div className="flex justify-between text-sm font-medium text-gray-600">
+                  <span>Driving: {log.driving} hrs</span>
+                  <span>On Duty: {log.onDuty} hrs</span>
+                  <span>Off Duty: {log.offDuty} hrs</span>
+                  <span>Sleeper Berth: {log.sleeperBerth} hrs</span>
+                </div>
+                {renderTimeBlocks(log)}
               </div>
-              {renderTimeBlocks(log)}
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+        <button
+          onClick={handlePrint}
+          className="mt-6 px-8 py-4 bg-gray-800 text-white font-semibold rounded-full shadow-lg hover:bg-gray-900 transition duration-300 transform hover:scale-105 flex items-center gap-2"
+        >
+          <Printer size={20} /> Print Logs
+        </button>
       </div>
     );
   };
@@ -252,25 +310,25 @@ const App = () => {
       case 'home':
         return (
           <div className="flex flex-col items-center justify-center min-h-full px-4">
-            <div className="max-w-7xl w-full mx-auto bg-white rounded-xl shadow-2xl p-6">
+            <div className="max-w-7xl w-full mx-auto bg-white rounded-2xl shadow-xl p-8">
               <h1 className="text-3xl md:text-4xl font-extrabold text-center text-gray-900 mb-4">
                 Plan a New Trip
               </h1>
-              <p className="text-center text-gray-600 mb-6 text-sm">
+              <p className="text-center text-gray-600 mb-8 text-base">
                 Enter the details below to begin your journey.
               </p>
-              <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4">
-                <div className="flex flex-col md:col-span-2">
+              <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+                <div className="md:col-span-2 flex flex-col items-center justify-center gap-4">
                   <div className="flex items-center gap-4">
-                    <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                      <MapPin size={16} /> Location
+                    <label className="text-base font-semibold text-gray-700 flex items-center gap-2">
+                      <MapPin size={20} /> Current Location
                     </label>
                     <button
                       type="button"
                       onClick={handleGetCurrentLocation}
                       disabled={isLocating}
                       className={`
-                        w-6 h-6 rounded-full flex items-center justify-center text-white transition-colors duration-300
+                        w-8 h-8 rounded-full flex items-center justify-center text-white transition-colors duration-300
                         ${isLocating ? 'bg-indigo-400' :
                           locationStatus === 'success' ? 'bg-green-500' :
                           locationStatus === 'error' ? 'bg-red-500' :
@@ -279,17 +337,17 @@ const App = () => {
                       `}
                     >
                       {isLocating ? (
-                        <Loader size={16} className="animate-spin" />
+                        <Loader size={20} className="animate-spin" />
                       ) : locationStatus === 'success' ? (
-                        <CheckCircle size={16} />
+                        <CheckCircle size={20} />
                       ) : locationStatus === 'error' ? (
-                        <XCircle size={16} />
+                        <XCircle size={20} />
                       ) : (
-                        <Locate size={16} />
+                        <Locate size={20} />
                       )}
                     </button>
-                    {currentLocation && <span className="text-sm text-gray-500">{currentLocation}</span>}
                   </div>
+                  {currentLocation && <span className="text-base font-medium text-indigo-600 text-center">{currentLocation}</span>}
                 </div>
                 <div className="flex flex-col">
                   <label htmlFor="origin" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
@@ -398,7 +456,7 @@ const App = () => {
                 </div>
               </form>
               {message && (
-                <div className={`mt-6 p-4 rounded-lg flex items-center justify-center gap-2 ${
+                <div className={`mt-8 p-4 rounded-lg flex items-center justify-center gap-2 ${
                   messageType === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                 }`}>
                   {messageType === 'success' ? <CheckCircle size={20} /> : <XCircle size={20} />}
