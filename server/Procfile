@@ -1,0 +1,1 @@
+web: gunicorn fleettrack_project.wsgi --log-file -
