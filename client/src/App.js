@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Truck, MapPin, Gauge, CheckCircle, Locate, Loader, Printer, ListChecks } from 'lucide-react';
+import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote, Fuel, Bed, Database, ListChecks, TrendingUp, Info } from 'lucide-react';
 
 // Firebase imports
 import { initializeApp } from 'firebase/app';
@@ -9,7 +9,11 @@ import { getFirestore, doc, addDoc, onSnapshot, collection, query, orderBy, wher
 const App = () => {
   // State management for UI tabs and form data
   const [activeTab, setActiveTab] = useState('home');
+  const [currentLocation, setCurrentLocation] = useState(null);
   const [formData, setFormData] = useState({
+    driverName: '',
+    departureDate: '',
+    departureTime: '',
     origin: '',
     destination: '',
     cycleUsed: '',
@@ -21,14 +25,13 @@ const App = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [userId, setUserId] = useState(null);
-  const [currentLocation, setCurrentLocation] = useState(null);
 
-  // Firestore and Auth instances
+  // Firestore and Mapbox references
   const dbRef = useRef(null);
   const authRef = useRef(null);
   const mapContainer = useRef(null);
   const mapRef = useRef(null);
-  const logCanvasRef = useRef(null);
+  const logCanvasRefs = useRef([]);
 
   // Global variables from the environment
   const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -39,7 +42,7 @@ const App = () => {
 
   // --- Firebase Initialization and Authentication ---
   useEffect(() => {
-    if (firebaseConfig) {
+    if (Object.keys(firebaseConfig).length > 0) {
       const app = initializeApp(firebaseConfig);
       dbRef.current = getFirestore(app);
       authRef.current = getAuth(app);
@@ -49,10 +52,14 @@ const App = () => {
         if (user) {
           setUserId(user.uid);
         } else {
-          if (initialAuthToken) {
-            await signInWithCustomToken(authRef.current, initialAuthToken);
-          } else {
-            await signInAnonymously(authRef.current);
+          try {
+            if (initialAuthToken) {
+              await signInWithCustomToken(authRef.current, initialAuthToken);
+            } else {
+              await signInAnonymously(authRef.current);
+            }
+          } catch (e) {
+            console.error("Firebase auth error:", e);
           }
         }
         setIsAuthReady(true);
@@ -78,11 +85,14 @@ const App = () => {
       });
       if (trips.length > 0) {
         setMapData(trips[0]);
-        setLogData(trips[0].logEvents || []);
+        setLogData(trips[0].logSheets || []);
         setFormData({
-            origin: trips[0].origin,
-            destination: trips[0].destination,
-            cycleUsed: trips[0].cycleUsed,
+          driverName: trips[0].driverName,
+          departureDate: trips[0].departureDate,
+          departureTime: trips[0].departureTime,
+          origin: trips[0].origin,
+          destination: trips[0].destination,
+          cycleUsed: trips[0].cycleUsed,
         });
       }
     });
@@ -92,7 +102,6 @@ const App = () => {
 
   // --- Dynamic Mapbox Script Loading ---
   useEffect(() => {
-    // Dynamically load the Mapbox GL JS script and stylesheet
     if (document.getElementById('mapbox-script')) return;
 
     const script = document.createElement('script');
@@ -107,23 +116,22 @@ const App = () => {
     document.head.appendChild(link);
 
     script.onload = () => {
-        // Now that the script is loaded, we can safely initialize the map
-        if (mapContainer.current && !mapRef.current) {
-            window.mapboxgl.accessToken = MAPBOX_TOKEN;
-            mapRef.current = new window.mapboxgl.Map({
-                container: mapContainer.current,
-                style: 'mapbox://styles/mapbox/streets-v11',
-                center: [-98.58, 39.82],
-                zoom: 3
-            });
-        }
+      if (mapContainer.current && !mapRef.current) {
+        window.mapboxgl.accessToken = MAPBOX_TOKEN;
+        mapRef.current = new window.mapboxgl.Map({
+          container: mapContainer.current,
+          style: 'mapbox://styles/mapbox/streets-v11',
+          center: [-98.58, 39.82],
+          zoom: 3
+        });
+      }
     };
   }, []);
 
   // --- Mapbox Initialization and Route Drawing ---
   useEffect(() => {
     if (!mapRef.current || !mapData) return;
-    
+
     // Clear existing layers and sources
     if (mapRef.current.getLayer('route')) {
       mapRef.current.removeLayer('route');
@@ -131,18 +139,18 @@ const App = () => {
     if (mapRef.current.getSource('route')) {
       mapRef.current.removeSource('route');
     }
-    
+
     // Clear existing markers
     document.querySelectorAll('.mapboxgl-marker').forEach(marker => marker.remove());
 
-    const originCoords = [-122.4194, 37.7749]; // San Francisco
-    const destinationCoords = [-74.0060, 40.7128]; // New York
+    const originCoords = [-122.4194, 37.7749];
+    const destinationCoords = [-74.0060, 40.7128];
 
     // Add trip markers
     const originMarker = new window.mapboxgl.Marker({ color: 'green' })
       .setLngLat(originCoords)
       .setPopup(new window.mapboxgl.Popup().setHTML(`
-        <div class="font-bold text-sm">Origin</div>
+        <div class="font-bold text-sm">Pickup Location</div>
         <div class="text-xs">${mapData.origin}</div>
       `))
       .addTo(mapRef.current);
@@ -150,11 +158,11 @@ const App = () => {
     const destinationMarker = new window.mapboxgl.Marker({ color: 'red' })
       .setLngLat(destinationCoords)
       .setPopup(new window.mapboxgl.Popup().setHTML(`
-        <div class="font-bold text-sm">Destination</div>
+        <div class="font-bold text-sm">Dropoff Location</div>
         <div class="text-xs">${mapData.destination}</div>
       `))
       .addTo(mapRef.current);
-      
+
     // Add current location marker if available
     if (currentLocation) {
         new window.mapboxgl.Marker({ color: 'blue' })
@@ -218,72 +226,80 @@ const App = () => {
 
   // --- ELD Log Canvas Drawing ---
   useEffect(() => {
-    if (activeTab !== 'logs' || !logCanvasRef.current || !logData) return;
+    if (activeTab !== 'logs' || !logData || logData.length === 0) return;
 
-    const canvas = logCanvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
-    const hourWidth = width / 24;
-    const statusHeight = height / 4;
+    logCanvasRefs.current.forEach((canvas, dayIndex) => {
+      if (!canvas) return;
 
-    ctx.clearRect(0, 0, width, height);
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+      const hourWidth = width / 24;
+      const statusHeight = height / 4;
 
-    ctx.strokeStyle = '#e5e7eb';
-    ctx.lineWidth = 1;
-    for (let i = 0; i <= 24; i++) {
-      ctx.beginPath();
-      ctx.moveTo(i * hourWidth, 0);
-      ctx.lineTo(i * hourWidth, height);
-      ctx.stroke();
-      ctx.fillStyle = '#6b7280';
+      ctx.clearRect(0, 0, width, height);
+
+      // Draw grid
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.lineWidth = 1;
       ctx.font = '12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(i, i * hourWidth, height - 5);
-    }
-    const statusLabels = ['Off Duty', 'Sleeper', 'Driving', 'On Duty'];
-    ctx.textAlign = 'left';
-    statusLabels.forEach((label, i) => {
-      ctx.fillText(label, 5, i * statusHeight + statusHeight / 2);
-    });
-
-    const statusMap = {
-      'Off Duty': 0,
-      'Sleeper': 1,
-      'Driving': 2,
-      'On Duty': 3
-    };
-
-    ctx.lineWidth = 4;
-    logData.forEach((event, index) => {
-      const startX = event.startTime / 60 * hourWidth;
-      const endX = event.endTime / 60 * hourWidth;
-      const y = statusMap[event.status] * statusHeight + statusHeight / 2;
-
-      ctx.beginPath();
-      ctx.moveTo(startX, y);
-      ctx.lineTo(endX, y);
-
-      switch (event.status) {
-        case 'Driving':
-          ctx.strokeStyle = '#ef4444';
-          break;
-        case 'On Duty':
-          ctx.strokeStyle = '#f97316';
-          break;
-        case 'Sleeper':
-          ctx.strokeStyle = '#3b82f6';
-          break;
-        case 'Off Duty':
-          ctx.strokeStyle = '#10b981';
-          break;
-        default:
-          ctx.strokeStyle = '#6b7280';
+      ctx.fillStyle = '#6b7280';
+      for (let i = 0; i <= 24; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * hourWidth, 0);
+        ctx.lineTo(i * hourWidth, height);
+        ctx.stroke();
+        ctx.textAlign = 'center';
+        ctx.fillText(i, i * hourWidth, height - 5);
       }
-      ctx.stroke();
-    });
 
+      // Draw status labels
+      const statusLabels = ['Off Duty', 'Sleeper', 'Driving', 'On Duty'];
+      ctx.textAlign = 'left';
+      statusLabels.forEach((label, i) => {
+        ctx.fillText(label, 5, i * statusHeight + statusHeight / 2);
+      });
+
+      // Map status to canvas y-coordinate
+      const statusMap = {
+        'Off Duty': 0,
+        'Sleeper': 1,
+        'Driving': 2,
+        'On Duty': 3
+      };
+
+      // Draw log events
+      ctx.lineWidth = 4;
+      logData[dayIndex].forEach(event => {
+        const startX = event.startTime / 60 * hourWidth;
+        const endX = event.endTime / 60 * hourWidth;
+        const y = statusMap[event.status] * statusHeight + statusHeight / 2;
+
+        ctx.beginPath();
+        ctx.moveTo(startX, y);
+        ctx.lineTo(endX, y);
+
+        switch (event.status) {
+          case 'Driving':
+            ctx.strokeStyle = '#ef4444';
+            break;
+          case 'On Duty':
+            ctx.strokeStyle = '#f97316';
+            break;
+          case 'Sleeper':
+            ctx.strokeStyle = '#3b82f6';
+            break;
+          case 'Off Duty':
+            ctx.strokeStyle = '#10b981';
+            break;
+          default:
+            ctx.strokeStyle = '#6b7280';
+        }
+        ctx.stroke();
+      });
+    });
   }, [activeTab, logData]);
+
 
   // --- Form Handlers and Logic ---
   const handleChange = (e) => {
@@ -298,11 +314,14 @@ const App = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setCurrentLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-          setMessage('Location found!');
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          setCurrentLocation({ lat, lng });
+          setFormData(prev => ({
+            ...prev,
+            origin: `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+          }));
+          setMessage('Location found and set as Origin!');
           setMessageType('success');
         },
         (error) => {
@@ -322,7 +341,7 @@ const App = () => {
   const handlePlanTrip = async () => {
     setMessage('');
     setMessageType('');
-    if (!formData.origin || !formData.destination || !formData.cycleUsed) {
+    if (!formData.origin || !formData.destination || !formData.cycleUsed || !formData.driverName || !formData.departureDate || !formData.departureTime) {
       setMessage('Please fill in all fields.');
       setMessageType('error');
       return;
@@ -336,46 +355,122 @@ const App = () => {
 
     setIsLoading(true);
 
-    const distance = 1500;
-    const avgSpeed = 60;
-    const totalDrivingTime = distance / avgSpeed;
-    const dailyDrivingLimit = 11;
-    const dailyOffDutyLimit = 10;
+    const DISTANCE = 1500; // Simulated trip distance
+    const AVG_SPEED = 60; // mph
+    const FUEL_STOP_DISTANCE = 1000; // miles
+    const DAILY_DRIVING_LIMIT = 11 * 60; // minutes
+    const OFF_DUTY_BREAK_MINUTES = 30; // minutes
+    const ON_DUTY_PICKUP_DROPOFF_MINUTES = 60; // minutes
+    const ON_DUTY_FUEL_STOP_MINUTES = 30; // minutes
+    const DAILY_ON_DUTY_LIMIT = 14 * 60; // minutes
+    const CYCLE_LIMIT = 70; // hours over 8 days
 
-    const logEvents = [];
-    let remainingDrivingHours = totalDrivingTime;
-    let totalDays = Math.ceil(totalDrivingTime / dailyDrivingLimit);
+    const totalTripTimeHours = DISTANCE / AVG_SPEED;
+    const initialCycleUsedHours = parseFloat(formData.cycleUsed);
 
-    for (let day = 1; day <= totalDays; day++) {
-      let drivingHoursToday = Math.min(remainingDrivingHours, dailyDrivingLimit);
-      let offDutyHoursToday = dailyOffDutyLimit;
-
-      logEvents.push({
-        status: 'Off Duty',
-        startTime: 0,
-        endTime: offDutyHoursToday * 60,
-      });
-      logEvents.push({
-        status: 'Driving',
-        startTime: offDutyHoursToday * 60,
-        endTime: (offDutyHoursToday + drivingHoursToday) * 60,
-      });
-      if (drivingHoursToday > 8) {
-         logEvents.push({
-           status: 'On Duty',
-           startTime: (offDutyHoursToday + 8) * 60,
-           endTime: (offDutyHoursToday + 8.5) * 60,
-         });
-      }
-      remainingDrivingHours -= drivingHoursToday;
+    // Check if the trip is possible within the cycle limit
+    if (initialCycleUsedHours + totalTripTimeHours > CYCLE_LIMIT) {
+        setMessage('Planned trip exceeds the 70-hour cycle limit. Please adjust your plan.');
+        setMessageType('error');
+        setIsLoading(false);
+        return;
     }
 
+    let remainingDrivingMinutes = totalTripTimeHours * 60;
+    let distanceDriven = 0;
+    const logSheets = [];
+    let currentDayLog = [];
+    let currentTimeMinutes = 0;
+    let dayCount = 1;
+
+    // Add pickup location time
+    currentDayLog.push({
+      status: 'On Duty',
+      event: 'Pickup',
+      startTime: currentTimeMinutes,
+      endTime: currentTimeMinutes + ON_DUTY_PICKUP_DROPOFF_MINUTES,
+    });
+    currentTimeMinutes += ON_DUTY_PICKUP_DROPOFF_MINUTES;
+
+    while (remainingDrivingMinutes > 0) {
+      const dailyDrivingMinutes = Math.min(remainingDrivingMinutes, DAILY_DRIVING_LIMIT);
+      let drivingSegmentMinutes = 0;
+
+      while (drivingSegmentMinutes < dailyDrivingMinutes) {
+        let segmentDuration = Math.min(DAILY_DRIVING_LIMIT - drivingSegmentMinutes, 8 * 60);
+
+        // Check for 30-min break
+        if (drivingSegmentMinutes >= 8 * 60) {
+           segmentDuration = Math.min(DAILY_DRIVING_LIMIT - drivingSegmentMinutes, 8 * 60);
+           currentDayLog.push({
+              status: 'Off Duty',
+              event: 'Break',
+              startTime: currentTimeMinutes,
+              endTime: currentTimeMinutes + OFF_DUTY_BREAK_MINUTES,
+           });
+           currentTimeMinutes += OFF_DUTY_BREAK_MINUTES;
+        }
+
+        currentDayLog.push({
+          status: 'Driving',
+          event: 'En Route',
+          startTime: currentTimeMinutes,
+          endTime: currentTimeMinutes + segmentDuration,
+        });
+
+        currentTimeMinutes += segmentDuration;
+        drivingSegmentMinutes += segmentDuration;
+        remainingDrivingMinutes -= segmentDuration;
+        distanceDriven += (segmentDuration / 60) * AVG_SPEED;
+
+        // Check for fuel stop
+        if (distanceDriven >= FUEL_STOP_DISTANCE) {
+            currentDayLog.push({
+              status: 'On Duty',
+              event: 'Fuel Stop',
+              startTime: currentTimeMinutes,
+              endTime: currentTimeMinutes + ON_DUTY_FUEL_STOP_MINUTES,
+            });
+            currentTimeMinutes += ON_DUTY_FUEL_STOP_MINUTES;
+            distanceDriven = 0; // Reset distance for the next fuel stop
+        }
+      }
+
+      // Add sleeper berth time to fill the 24 hour day
+      currentDayLog.push({
+        status: 'Sleeper',
+        event: 'Sleeper Berth',
+        startTime: currentTimeMinutes,
+        endTime: 24 * 60,
+      });
+
+      logSheets.push(currentDayLog);
+      currentDayLog = [];
+      currentTimeMinutes = 0;
+      dayCount++;
+    }
+
+    // Add drop-off time on the last day
+    const lastDayLog = logSheets[logSheets.length - 1];
+    lastDayLog.push({
+      status: 'On Duty',
+      event: 'Dropoff',
+      startTime: currentTimeMinutes,
+      endTime: currentTimeMinutes + ON_DUTY_PICKUP_DROPOFF_MINUTES,
+    });
+    currentTimeMinutes += ON_DUTY_PICKUP_DROPOFF_MINUTES;
+
     const tripData = {
+      driverName: formData.driverName,
+      departureDate: formData.departureDate,
+      departureTime: formData.departureTime,
       origin: formData.origin,
       destination: formData.destination,
       cycleUsed: formData.cycleUsed,
-      distance: distance,
-      logEvents: logEvents,
+      distance: DISTANCE,
+      totalDrivingTimeHours: totalTripTimeHours,
+      totalDays: logSheets.length,
+      logSheets: logSheets,
       timestamp: new Date().toISOString(),
       userId: userId,
     };
@@ -387,7 +482,7 @@ const App = () => {
       setMessageType('success');
       setActiveTab('map');
       setMapData(tripData);
-      setLogData(tripData.logEvents);
+      setLogData(logSheets);
     } catch (e) {
       console.error("Error adding document: ", e);
       setMessage('Error saving trip plan. Please try again.');
@@ -398,6 +493,36 @@ const App = () => {
   };
 
   const renderContent = () => {
+    const tripInfo = mapData ? (
+      <div className="bg-gray-50 p-6 rounded-2xl shadow-inner border border-gray-200 mb-6">
+        <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
+            <Info className="h-6 w-6 mr-2 text-blue-600" /> Trip Details
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+          <div className="flex items-center space-x-2">
+            <User className="h-4 w-4 text-gray-500" />
+            <span className="font-medium text-gray-700">Driver:</span>
+            <span className="text-gray-600">{mapData.driverName}</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Calendar className="h-4 w-4 text-gray-500" />
+            <span className="font-medium text-gray-700">Date:</span>
+            <span className="text-gray-600">{mapData.departureDate}</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Clock className="h-4 w-4 text-gray-500" />
+            <span className="font-medium text-gray-700">Time:</span>
+            <span className="text-gray-600">{mapData.departureTime}</span>
+          </div>
+        </div>
+        <div className="mt-4 text-sm text-gray-500">
+          <span className="font-bold">Trip ID:</span> {mapData.id}
+          <br/>
+          <span className="font-bold">User ID:</span> {userId}
+        </div>
+      </div>
+    ) : null;
+
     switch (activeTab) {
       case 'home':
         return (
@@ -407,7 +532,55 @@ const App = () => {
             
             <form className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Origin</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Driver Name</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    name="driverName"
+                    value={formData.driverName}
+                    onChange={handleChange}
+                    placeholder="e.g., John Doe"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200 shadow-sm"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    <User className="h-5 w-5 text-gray-400" />
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Departure Date</label>
+                  <div className="relative">
+                    <input
+                      type="date"
+                      name="departureDate"
+                      value={formData.departureDate}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200 shadow-sm"
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                      <Calendar className="h-5 w-5 text-gray-400" />
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Departure Time</label>
+                  <div className="relative">
+                    <input
+                      type="time"
+                      name="departureTime"
+                      value={formData.departureTime}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200 shadow-sm"
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                      <Clock className="h-5 w-5 text-gray-400" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Current Location</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -417,9 +590,13 @@ const App = () => {
                     placeholder="e.g., San Francisco, CA"
                     className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200 shadow-sm"
                   />
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                    <MapPin className="h-5 w-5 text-gray-400" />
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleLocateMe}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-blue-600 transition duration-200"
+                  >
+                    <Locate className="h-5 w-5" />
+                  </button>
                 </div>
               </div>
               <div>
@@ -487,39 +664,93 @@ const App = () => {
           <div className="p-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-4">Trip Map</h2>
             <p className="text-gray-500 mb-4">Route from **{mapData?.origin || '...'}** to **{mapData?.destination || '...'}**.</p>
+            {tripInfo}
             <div ref={mapContainer} className="h-[600px] w-full rounded-xl shadow-lg border border-gray-200"></div>
-            {userId && (
-                <div className="mt-4 text-sm text-gray-500">
-                    <span className="font-bold">Trip ID:</span> {mapData?.id || 'N/A'}
-                    <br/>
-                    <span className="font-bold">User ID:</span> {userId}
-                </div>
-            )}
           </div>
         );
       case 'logs':
         return (
           <div className="p-8">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">ELD Log</h2>
-            <p className="text-gray-500 mb-4">This log sheet is a simulated representation of your driving hours.</p>
-            <div className="bg-white p-4 rounded-xl shadow-lg border border-gray-200">
-              <canvas ref={logCanvasRef} width="800" height="200" className="w-full"></canvas>
-            </div>
-            
-            <div className="mt-8">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Log Events</h3>
-              <ul className="space-y-2">
-                {logData.map((event, index) => (
-                  <li key={index} className="flex items-center space-x-2 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                    {event.status === 'Driving' && <Truck className="h-5 w-5 text-red-500" />}
-                    {event.status === 'On Duty' && <Gauge className="h-5 w-5 text-orange-500" />}
-                    {event.status === 'Sleeper' && <CheckCircle className="h-5 w-5 text-blue-500" />}
-                    {event.status === 'Off Duty' && <CheckCircle className="h-5 w-5 text-green-500" />}
-                    <span className="font-medium text-gray-700">{event.status}:</span>
-                    <span className="text-sm text-gray-500">{Math.floor(event.startTime / 60).toString().padStart(2, '0')}:{Math.floor(event.startTime % 60).toString().padStart(2, '0')} - {Math.floor(event.endTime / 60).toString().padStart(2, '0')}:{Math.floor(event.endTime % 60).toString().padStart(2, '0')}</span>
-                  </li>
-                ))}
-              </ul>
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">ELD Logs</h2>
+            <p className="text-gray-500 mb-4">This log sheet is a simulated representation of your driving hours based on standard regulations.</p>
+            {tripInfo}
+            {logData.map((dayLog, index) => (
+              <div key={index} className="bg-white p-4 rounded-xl shadow-lg border border-gray-200 mb-6">
+                <h4 className="font-bold text-gray-800 mb-4">Day {index + 1}</h4>
+                <canvas ref={el => logCanvasRefs.current[index] = el} width="800" height="200" className="w-full"></canvas>
+                <div className="mt-4">
+                  <h5 className="font-semibold text-gray-700 mb-2">Events:</h5>
+                  <ul className="space-y-1 text-sm">
+                    {dayLog.map((event, eventIndex) => (
+                      <li key={eventIndex} className="flex items-center space-x-2">
+                        {event.status === 'Driving' && <Truck className="h-4 w-4 text-red-500" />}
+                        {event.status === 'On Duty' && <Gauge className="h-4 w-4 text-orange-500" />}
+                        {event.status === 'Sleeper' && <Bed className="h-4 w-4 text-blue-500" />}
+                        {event.status === 'Off Duty' && <XCircle className="h-4 w-4 text-green-500" />}
+                        <span className="font-medium">{event.status} - {event.event}:</span>
+                        <span className="text-gray-500">{Math.floor(event.startTime / 60).toString().padStart(2, '0')}:{Math.floor(event.startTime % 60).toString().padStart(2, '0')} - {Math.floor(event.endTime / 60).toString().padStart(2, '0')}:{Math.floor(event.endTime % 60).toString().padStart(2, '0')}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      case 'reports':
+        const totalDrivingTime = mapData?.totalDrivingTimeHours || 0;
+        const totalDistance = mapData?.distance || 0;
+        const numDays = mapData?.totalDays || 0;
+        const totalOnDutyTime = mapData?.logSheets?.[0]?.reduce((total, event) => total + (event.status === 'On Duty' ? (event.endTime - event.startTime) / 60 : 0), 0) || 0;
+        return (
+          <div className="p-8">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+              <TrendingUp className="h-6 w-6 mr-2 text-blue-600" /> Trip Report
+            </h2>
+            {tripInfo}
+            <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="flex flex-col items-center p-4 bg-gray-50 rounded-lg">
+                        <Database className="h-8 w-8 text-blue-500 mb-2" />
+                        <span className="text-sm font-medium text-gray-500">Total Distance</span>
+                        <span className="text-2xl font-bold text-blue-600 mt-1">{totalDistance} mi</span>
+                    </div>
+                    <div className="flex flex-col items-center p-4 bg-gray-50 rounded-lg">
+                        <Clock className="h-8 w-8 text-orange-500 mb-2" />
+                        <span className="text-sm font-medium text-gray-500">Total Driving Time</span>
+                        <span className="text-2xl font-bold text-orange-600 mt-1">{totalDrivingTime.toFixed(1)} hrs</span>
+                    </div>
+                    <div className="flex flex-col items-center p-4 bg-gray-50 rounded-lg">
+                        <Calendar className="h-8 w-8 text-green-500 mb-2" />
+                        <span className="text-sm font-medium text-gray-500">Total Days</span>
+                        <span className="text-2xl font-bold text-green-600 mt-1">{numDays}</span>
+                    </div>
+                </div>
+                <div className="mt-6">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4">Detailed Breakdown</h3>
+                    <ul className="space-y-3 text-sm">
+                        <li className="flex items-center space-x-3">
+                            <Truck className="h-5 w-5 text-red-500" />
+                            <span className="font-medium">Driving Time:</span>
+                            <span className="text-gray-600">{totalDrivingTime.toFixed(1)} hours</span>
+                        </li>
+                        <li className="flex items-center space-x-3">
+                            <Gauge className="h-5 w-5 text-orange-500" />
+                            <span className="font-medium">On Duty Time:</span>
+                            <span className="text-gray-600">{totalOnDutyTime.toFixed(1)} hours (Pickup, Drop-off, Fuel)</span>
+                        </li>
+                        <li className="flex items-center space-x-3">
+                            <Bed className="h-5 w-5 text-blue-500" />
+                            <span className="font-medium">Sleeper Berth/Off Duty:</span>
+                            <span className="text-gray-600">Calculated based on 24-hour cycle</span>
+                        </li>
+                        <li className="flex items-center space-x-3">
+                            <Fuel className="h-5 w-5 text-gray-500" />
+                            <span className="font-medium">Fuel Stops:</span>
+                            <span className="text-gray-600">{Math.floor(mapData.distance / 1000)} planned stop(s)</span>
+                        </li>
+                    </ul>
+                </div>
             </div>
           </div>
         );
@@ -552,6 +783,12 @@ const App = () => {
               className={`px-4 py-2 rounded-full transition-colors duration-200 font-medium ${activeTab === 'logs' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-600 hover:text-blue-600'}`}
             >
               <ListChecks className="h-5 w-5 inline-block mr-2" /> Logs
+            </button>
+            <button
+              onClick={() => setActiveTab('reports')}
+              className={`px-4 py-2 rounded-full transition-colors duration-200 font-medium ${activeTab === 'reports' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-600 hover:text-blue-600'}`}
+            >
+              <TrendingUp className="h-5 w-5 inline-block mr-2" /> Reports
             </button>
           </div>
 
