@@ -8,6 +8,7 @@ const App = () => {
   const [destination, setDestination] = useState('');
   const [date, setDate] = useState('');
   const [driverName, setDriverName] = useState('');
+  const [vehicleNumber, setVehicleNumber] = useState('');
   const [currentLocation, setCurrentLocation] = useState('');
   const [cycleUsed, setCycleUsed] = useState('');
   const [departureTime, setDepartureTime] = useState('');
@@ -47,36 +48,38 @@ const App = () => {
       return;
     }
 
+    const combinedDateTime = new Date(`${date}T${departureTime}:00`);
     const tripData = {
       origin,
       destination,
-      date,
-      driver_name: driverName,
-      current_location: currentLocation,
-      cycle_used: Number(cycleUsed),
-      departure_time: departureTime,
+      driverName,
+      vehicleNumber,
+      currentLocation,
+      cycleUsed: Number(cycleUsed),
+      departureTime: combinedDateTime.toISOString(),
     };
+
     try {
       await axios.post(`${apiUrl}/api/trips/`, tripData);
       setOrigin('');
       setDestination('');
       setDate('');
       setDriverName('');
-      setCurrentLocation('');
+      setVehicleNumber('');
       setCycleUsed('');
       setDepartureTime('');
       setMessage('Trip submitted successfully!');
       setMessageType('success');
     } catch (error) {
       console.error('Submission failed:', error.response?.data || error.message);
-      setMessage('Failed to submit trip. Please try again.');
+      setMessage(`Failed to submit trip. Error: ${error.message || 'Unknown error'}`);
       setMessageType('error');
     }
   };
 
   const LocationIndicator = ({ status }) => {
     const statusClasses = {
-      pending: 'bg-gray-400',
+      pending: 'bg-gray-400 animate-pulse',
       success: 'bg-green-500',
       error: 'bg-red-500',
       unsupported: 'bg-yellow-500',
@@ -163,6 +166,20 @@ const App = () => {
                     placeholder="Enter driver's name"
                     value={driverName}
                     onChange={(e) => setDriverName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label htmlFor="vehicleNumber" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                    <Truck size={16} /> Vehicle Number
+                  </label>
+                  <input
+                    id="vehicleNumber"
+                    type="text"
+                    className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
+                    placeholder="e.g., ABC-123"
+                    value={vehicleNumber}
+                    onChange={(e) => setVehicleNumber(e.target.value)}
                     required
                   />
                 </div>
