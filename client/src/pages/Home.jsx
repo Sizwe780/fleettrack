@@ -5,7 +5,7 @@ import API from '../services/api';
 const Home = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    driverName: 'Sizwe',
+    driverName: '',
     currentLocation: '',
     pickupLocation: '',
     dropoffLocation: '',
@@ -13,6 +13,7 @@ const Home = () => {
     departure: ''
   });
 
+  const [locationDetected, setLocationDetected] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -25,9 +26,11 @@ const Home = () => {
           ...prev,
           currentLocation: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
         }));
+        setLocationDetected(true);
       },
       (err) => {
         console.warn('Location error:', err);
+        setLocationDetected(false);
         setError('Unable to detect location. Please enter manually.');
       },
       { enableHighAccuracy: true }
@@ -75,36 +78,11 @@ const Home = () => {
               type="text"
               name="driverName"
               value={formData.driverName}
-              readOnly
-              className="w-full border p-2 rounded bg-gray-100"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium">Pickup Location</label>
-            <input
-              type="text"
-              name="pickupLocation"
-              value={formData.pickupLocation}
               onChange={handleChange}
               className="w-full border p-2 rounded"
               required
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium">Dropoff Location</label>
-            <input
-              type="text"
-              name="dropoffLocation"
-              value={formData.dropoffLocation}
-              onChange={handleChange}
-              className="w-full border p-2 rounded"
-              required
-            />
-          </div>
-        </div>
-
-        {/* Right Column */}
-        <div className="flex flex-col space-y-4">
           <div>
             <label className="block text-sm font-medium">Departure Date & Time</label>
             <input
@@ -117,6 +95,21 @@ const Home = () => {
             />
           </div>
           <div>
+            <label className="block text-sm font-medium">Origin</label>
+            <input
+              type="text"
+              name="pickupLocation"
+              value={formData.pickupLocation}
+              onChange={handleChange}
+              className="w-full border p-2 rounded"
+              required
+            />
+          </div>
+        </div>
+
+        {/* Right Column */}
+        <div className="flex flex-col space-y-4">
+          <div>
             <label className="block text-sm font-medium">Cycle Used (hrs)</label>
             <input
               type="number"
@@ -127,9 +120,20 @@ const Home = () => {
               required
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium">Destination</label>
+            <input
+              type="text"
+              name="dropoffLocation"
+              value={formData.dropoffLocation}
+              onChange={handleChange}
+              className="w-full border p-2 rounded"
+              required
+            />
+          </div>
           <div className="flex items-center space-x-2 mt-2">
             <span className="block text-sm font-medium">Location</span>
-            <span className={`w-3 h-3 rounded-full ${formData.currentLocation ? 'bg-green-500' : 'bg-red-500'}`}></span>
+            <span className={`w-3 h-3 rounded-full ${locationDetected ? 'bg-green-500' : 'bg-red-500'}`}></span>
           </div>
         </div>
 
