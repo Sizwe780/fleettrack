@@ -59,10 +59,13 @@ const Dashboard = () => {
                   ></span>
                 </div>
                 <p className="text-sm text-gray-700">
-                  <strong>Origin:</strong> {trip.origin}
+                  <strong>Current Location:</strong> {trip.currentLocation}
                 </p>
                 <p className="text-sm text-gray-700">
-                  <strong>Destination:</strong> {trip.destination}
+                  <strong>Pickup:</strong> {trip.pickupLocation}
+                </p>
+                <p className="text-sm text-gray-700">
+                  <strong>Dropoff:</strong> {trip.dropoffLocation}
                 </p>
                 <p className="text-sm text-gray-700">
                   <strong>Departure:</strong>{' '}

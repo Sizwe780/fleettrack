@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from '../services/api';
 
@@ -6,11 +6,27 @@ const Home = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     driverName: 'Sizwe',
-    departure: '',
-    origin: '',
+    currentLocation: '',
+    pickupLocation: '',
+    dropoffLocation: '',
     cycleHours: '',
-    destination: ''
+    departure: ''
   });
+
+  // Auto-detect current location
+  useEffect(() => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setFormData((prev) => ({
+          ...prev,
+          currentLocation: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
+        }));
+      },
+      (err) => console.warn('Location error:', err),
+      { enableHighAccuracy: true }
+    );
+  }, []);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -46,22 +62,22 @@ const Home = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium">Origin</label>
+            <label className="block text-sm font-medium">Pickup Location</label>
             <input
               type="text"
-              name="origin"
-              value={formData.origin}
+              name="pickupLocation"
+              value={formData.pickupLocation}
               onChange={handleChange}
               className="w-full border p-2 rounded"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium">Destination</label>
+            <label className="block text-sm font-medium">Dropoff Location</label>
             <input
               type="text"
-              name="destination"
-              value={formData.destination}
+              name="dropoffLocation"
+              value={formData.dropoffLocation}
               onChange={handleChange}
               className="w-full border p-2 rounded"
               required
