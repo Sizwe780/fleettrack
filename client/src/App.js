@@ -1,3 +1,4 @@
+/* global __app_id, __firebase_config, __initial_auth_token */
 import React, { useState, useEffect, useRef } from 'react';
 import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote, Fuel, Bed, Database, ListChecks, TrendingUp, Info } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
@@ -550,7 +551,7 @@ const App = () => {
     if (!logData || logData.length === 0) {
       return (
         <div className="flex flex-col items-center p-8 text-center text-gray-500">
-          <p className="mb-4">No ELD log data available. Submit a trip to generate logs.</p>
+          <p>No ELD log data available. Submit a trip to generate logs.</p>
         </div>
       );
     }
@@ -572,7 +573,7 @@ const App = () => {
                 className="w-full border rounded-lg shadow-inner"
               ></canvas>
               <div className="w-full mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2 mb-2">
+                <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                   <StickyNote size={16} /> Remarks:
                 </h4>
                 <textarea
