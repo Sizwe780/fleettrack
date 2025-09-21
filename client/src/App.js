@@ -88,28 +88,6 @@ const App = () => {
     const [currentLocation, setCurrentLocation] = useState('');
     const [cycleUsed, setCycleUsed] = useState('');
     const [departureTime, setDepartureTime] = useState('');
-    const [locationStatus, setLocationStatus] = useState('pending');
-
-    useEffect(() => {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const { latitude, longitude } = pos.coords;
-            setCurrentLocation(`${latitude}, ${longitude}`);
-            setLocationStatus('granted');
-          },
-          (err) => {
-            // Updated error logging to provide more details
-            console.error('Geolocation error:', err.message, 'Code:', err.code);
-            setCurrentLocation('Location not available');
-            setLocationStatus('denied');
-          }
-        );
-      } else {
-        setCurrentLocation('Geolocation not supported by this browser.');
-        setLocationStatus('unsupported');
-      }
-    }, []);
 
     const handleSubmit = async (e) => {
       e.preventDefault();
@@ -142,7 +120,6 @@ const App = () => {
         setCurrentLocation('');
         setCycleUsed('');
         setDepartureTime('');
-        setLocationStatus('pending');
 
         setModalMessage('Trip submitted successfully!');
         setIsSuccess(true);
@@ -233,10 +210,10 @@ const App = () => {
                   id="currentLocation"
                   type="text"
                   value={currentLocation}
-                  readOnly
-                  className="input-field w-full cursor-not-allowed pr-10"
+                  onChange={(e) => setCurrentLocation(e.target.value)}
+                  className="input-field w-full pr-10"
+                  placeholder="Enter your current location..."
                 />
-                <div className={`location-indicator absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full ${locationStatus === 'granted' ? 'bg-green-500' : locationStatus === 'denied' ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
               </div>
             </div>
           </div>
