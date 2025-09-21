@@ -1,401 +1,685 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote, Fuel, Bed, Database, ListChecks, TrendingUp, Info } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, addDoc, onSnapshot, collection, query, orderBy, where, getDocs, setLogLevel } from 'firebase/firestore';
+import { getFirestore, doc, addDoc, onSnapshot, collection, query } from 'firebase/firestore';
+import { Truck, MapPin, Calendar, Gauge, Info, CheckCircle, XCircle, Locate, Loader, ListChecks, TrendingUp, Fuel, Bed, ClipboardPenLine } from 'lucide-react';
+import { createRoot } from 'react-dom/client';
 
-// Ensure the Mapbox library is loaded for the map functionality
-const Mapbox = () => {
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.js';
-    script.async = true;
-    document.body.appendChild(script);
-
-    const style = document.createElement('link');
-    style.href = 'https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.css';
-    style.rel = 'stylesheet';
-    document.head.appendChild(style);
-  }, []);
-  return null;
-};
-
-const mockBackendResponse = {
-  route: {
-    distance_miles: 1500,
-    duration_hours: 25,
-    stops: [
-      { type: "rest", location: "Nashville, TN", duration: 10, notes: "Mandatory 10-hour rest break." },
-      { type: "fuel", location: "Memphis, TN", notes: "Fueling and pre-trip inspection." },
-      { type: "rest", location: "Dallas, TX", duration: 8, notes: "Mandatory 8-hour rest break." },
-      { type: "fuel", location: "Austin, TX", notes: "Fueling and post-trip inspection." },
-    ]
-  },
-  logs: [
-    {
-      date: "2025-09-22",
-      log_entries: [
-        { time: "06:00", status: "Off Duty" },
-        { time: "07:00", status: "Driving" },
-        { time: "12:00", status: "On Duty" },
-        { time: "13:00", status: "Off Duty" },
-        { time: "14:00", status: "Driving" },
-        { time: "19:00", status: "On Duty" },
-        { time: "20:00", status: "Sleeper Berth" },
-      ]
-    },
-    {
-      date: "2025-09-23",
-      log_entries: [
-        { time: "05:00", status: "Off Duty" },
-        { time: "06:00", status: "Driving" },
-        { time: "11:00", status: "On Duty" },
-        { time: "12:00", status: "Off Duty" },
-        { time: "13:00", status: "Driving" },
-        { time: "18:00", status: "On Duty" },
-        { time: "19:00", status: "Sleeper Berth" },
-      ]
-    },
-  ]
-};
-
-const DailyLogSheet = ({ date, logEntries, driverName, vehicleNumber }) => {
-  const statuses = ["Off Duty", "Sleeper Berth", "Driving", "On Duty"];
-  const getStatusIndex = (status) => statuses.indexOf(status);
-
-  const renderLogGrid = () => {
-    const grid = Array(statuses.length).fill(null).map(() => Array(24).fill(''));
-    const hours = Array.from({ length: 24 }, (_, i) => i);
-
-    for (let i = 0; i < logEntries.length - 1; i++) {
-      const entry = logEntries[i];
-      const nextEntry = logEntries[i + 1];
-      const startHour = parseInt(entry.time.split(':')[0]);
-      const endHour = parseInt(nextEntry.time.split(':')[0]);
-      const statusIndex = getStatusIndex(entry.status);
-
-      for (let h = startHour; h < endHour; h++) {
-        grid[statusIndex][h] = 'filled';
-      }
-    }
-    return (
-      <div className="relative border border-gray-300 rounded-lg overflow-hidden">
-        <div className="flex bg-gray-100 text-xs font-medium border-b border-gray-300">
-          <div className="w-16 px-2 py-1 text-center border-r border-gray-300">Status</div>
-          {hours.map(h => (
-            <div key={h} className="flex-1 py-1 text-center border-r border-gray-300">{h}</div>
-          ))}
-        </div>
-        <div className="flex flex-col">
-          {statuses.map((status, i) => (
-            <div key={status} className="flex border-b border-gray-300 last:border-b-0">
-              <div className="w-16 px-2 py-1 flex items-center justify-center text-[10px] text-gray-600 border-r border-gray-300">{status}</div>
-              {hours.map(h => (
-                <div key={h} className={`flex-1 h-8 border-r border-gray-300 ${grid[i][h] === 'filled' ? 'bg-blue-200' : ''}`}></div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="p-6 bg-white rounded-lg shadow-sm border border-gray-200">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-          <StickyNote size={20} /> Daily Log Sheet
-        </h3>
-        <span className="text-sm text-gray-500">{new Date(date).toLocaleDateString()}</span>
-      </div>
-      <div className="grid grid-cols-2 gap-4 mb-4 text-sm text-gray-700">
-        <div><span className="font-semibold">Driver:</span> {driverName}</div>
-        <div><span className="font-semibold">Vehicle:</span> {vehicleNumber}</div>
-      </div>
-      {renderLogGrid()}
-    </div>
-  );
-};
-
+// Main App component
 const App = () => {
-  const [activeTab, setActiveTab] = useState('home');
-  const [formData, setFormData] = useState({
-    origin: '',
-    destination: '',
-    date: '',
-    driverName: '',
-    vehicleNumber: '',
-    cycleUsed: '',
-  });
-
-  const [message, setMessage] = useState('');
-  const [messageType, setMessageType] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [tripLogs, setTripLogs] = useState([]);
-  const [db, setDb] = useState(null);
-  const [auth, setAuth] = useState(null);
-  const [userId, setUserId] = useState(null);
-  const mapRef = useRef(null);
-
-  // Firestore & Auth initialization
-  useEffect(() => {
-    try {
-      setLogLevel('debug');
-      const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-      const app = initializeApp(firebaseConfig);
-      const firestore = getFirestore(app);
-      const authentication = getAuth(app);
-      setDb(firestore);
-      setAuth(authentication);
-
-      onAuthStateChanged(authentication, (user) => {
-        if (user) {
-          setUserId(user.uid);
-          // Only fetch data after the user is authenticated
-          fetchTripLogs(firestore, user.uid);
-        } else {
-          const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-          if (initialAuthToken) {
-            signInWithCustomToken(authentication, initialAuthToken).catch(console.error);
-          } else {
-            signInAnonymously(authentication).catch(console.error);
-          }
-        }
-      });
-    } catch (error) {
-      console.error("Firebase initialization failed:", error);
-    }
-  }, []);
-
-  // Fetch data from Firestore
-  const fetchTripLogs = (firestore, currentUserId) => {
-    if (!firestore || !currentUserId) return;
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    const logsCollectionRef = collection(firestore, `artifacts/${appId}/users/${currentUserId}/trip_logs`);
-
-    const unsubscribe = onSnapshot(logsCollectionRef, (snapshot) => {
-      const logs = [];
-      snapshot.forEach(doc => {
-        logs.push({ id: doc.id, ...doc.data() });
-      });
-      setTripLogs(logs);
-    }, (error) => {
-      console.error("Failed to fetch trip logs:", error);
-      setMessage("Failed to load trip logs. Please try again.");
-      setMessageType("error");
+    // State management for UI and data
+    const [activeTab, setActiveTab] = useState('home');
+    const [formData, setFormData] = useState({
+        pickupLocation: '',
+        dropoffLocation: '',
+        cycleUsed: ''
     });
-    return () => unsubscribe();
-  };
+    const [message, setMessage] = useState('');
+    const [messageType, setMessageType] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [isLocating, setIsLocating] = useState(false);
+    const [locationStatus, setLocationStatus] = useState(null);
+    const [tripData, setTripData] = useState([]);
+    const [selectedTrip, setSelectedTrip] = useState(null);
+    const [currentPage, setCurrentPage] = useState(0);
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prevData => ({ ...prevData, [name]: value }));
-  };
+    // State for Firebase
+    const [db, setDb] = useState(null);
+    const [auth, setAuth] = useState(null);
+    const [userId, setUserId] = useState(null);
 
-  const handleCreateTrip = async () => {
-    if (!db || !userId) {
-      setMessage("Authentication is not ready. Please wait.");
-      setMessageType("warning");
-      return;
-    }
-    setIsLoading(true);
-    setMessage('');
-    try {
-      const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-      const logsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/trip_logs`);
-      await addDoc(logsCollectionRef, {
-        ...formData,
-        createdAt: new Date(),
-        userId: userId,
-        ...mockBackendResponse // Add the mock backend data to Firestore
-      });
-      setMessage("Trip created successfully!");
-      setMessageType("success");
-      setFormData({ origin: '', destination: '', date: '', driverName: '', vehicleNumber: '', cycleUsed: '' });
-      setActiveTab('logs');
-    } catch (error) {
-      console.error("Error adding document:", error);
-      setMessage("Failed to create trip. Please try again.");
-      setMessageType("error");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    // Canvas and Mapbox references
+    const canvasRef = useRef(null);
+    const mapRef = useRef(null);
+    const mapbox = useRef(null);
+    const mapInstance = useRef(null);
+    const currentLocMarker = useRef(null);
 
-  const Message = ({ text, type }) => {
-    if (!text) return null;
-    const isError = type === 'error' || type === 'warning';
-    const bgColor = isError ? 'bg-red-50' : 'bg-green-50';
-    const textColor = isError ? 'text-red-700' : 'text-green-700';
-    const icon = isError ? <XCircle size={20} /> : <CheckCircle size={20} />;
+    // --- Firebase Initialization and Data Fetching ---
+    useEffect(() => {
+        const initFirebase = async () => {
+            try {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                const app = initializeApp(firebaseConfig);
+                const authInstance = getAuth(app);
+                const dbInstance = getFirestore(app);
+                setDb(dbInstance);
+                setAuth(authInstance);
+
+                const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                if (initialToken) {
+                    await signInWithCustomToken(authInstance, initialToken);
+                } else {
+                    await signInAnonymously(authInstance);
+                }
+
+                const unsubscribe = onAuthStateChanged(authInstance, (user) => {
+                    if (user) {
+                        setUserId(user.uid);
+                    } else {
+                        setUserId(null);
+                    }
+                });
+                return () => unsubscribe();
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+            }
+        };
+        initFirebase();
+    }, []);
+
+    // Fetch trip data from Firestore
+    useEffect(() => {
+        if (!db || !userId) return;
+        const tripsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/trips`);
+        const unsubscribe = onSnapshot(tripsCollectionRef, (snapshot) => {
+            const trips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // Sort client-side to avoid Firestore index issues
+            trips.sort((a, b) => b.createdAt.seconds - a.createdAt.seconds);
+            setTripData(trips);
+        }, (error) => {
+            console.error("Error listening to trip data:", error);
+        });
+        return () => unsubscribe();
+    }, [db, userId]);
+
+    // --- Mapbox Initialization and Route Drawing ---
+    useEffect(() => {
+        if (activeTab === 'home' && mapRef.current && !mapInstance.current) {
+            if (!window.mapboxgl) {
+                setMessage('Mapbox GL JS is not loaded. Please ensure the script tag is in your HTML.');
+                setMessageType('error');
+                return;
+            }
+            mapbox.current = window.mapboxgl;
+            mapbox.current.accessToken = 'pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4M29iazA2Z2gycXA4N2pmbDZmangifQ.-g_Qh_W4LpT9a6aA9V9i5Q'; // Public demo key
+            const map = new mapbox.current.Map({
+                container: mapRef.current,
+                style: 'mapbox://styles/mapbox/streets-v11',
+                center: [-98.5795, 39.8283], // Center of the US
+                zoom: 3
+            });
+            mapInstance.current = map;
+            map.addControl(new mapbox.current.NavigationControl(), 'bottom-right');
+            map.addControl(new mapbox.current.FullscreenControl(), 'bottom-right');
+
+            return () => {
+                if (mapInstance.current) {
+                    mapInstance.current.remove();
+                    mapInstance.current = null;
+                }
+            };
+        }
+    }, [activeTab]);
+
+    useEffect(() => {
+        if (activeTab === 'home' && mapInstance.current && selectedTrip && selectedTrip.route) {
+            const map = mapInstance.current;
+            const geojson = selectedTrip.route;
+            const routeSourceId = 'route';
+
+            if (map.getSource(routeSourceId)) {
+                map.getSource(routeSourceId).setData(geojson);
+            } else {
+                map.addSource(routeSourceId, {
+                    type: 'geojson',
+                    data: geojson
+                });
+                map.addLayer({
+                    id: routeSourceId,
+                    type: 'line',
+                    source: routeSourceId,
+                    layout: { 'line-join': 'round', 'line-cap': 'round' },
+                    paint: { 'line-color': '#3b82f6', 'line-width': 8 }
+                });
+            }
+
+            // Fit map to route bounds
+            const coordinates = geojson.features[0].geometry.coordinates;
+            const bounds = coordinates.reduce((bounds, coord) => {
+                return bounds.extend(coord);
+            }, new mapbox.current.LngLatBounds(coordinates[0], coordinates[0]));
+            map.fitBounds(bounds, { padding: 100 });
+        }
+    }, [selectedTrip, activeTab]);
+
+    // --- Geolocation Functionality ---
+    const handleLocateMe = useCallback(() => {
+        setIsLocating(true);
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const { latitude, longitude } = position.coords;
+                    const geocodeUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`;
+                    fetch(geocodeUrl)
+                        .then(res => res.json())
+                        .then(data => {
+                            const address = data.address;
+                            const city = address.city || address.town || address.village;
+                            const state = address.state;
+                            const locationStr = city && state ? `${city}, ${state}` : `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+                            setFormData(prev => ({ ...prev, pickupLocation: locationStr }));
+                            setLocationStatus('success');
+                            if (currentLocMarker.current) {
+                                currentLocMarker.current.remove();
+                            }
+                            currentLocMarker.current = new mapbox.current.Marker({ color: '#f59e0b' })
+                                .setLngLat([longitude, latitude])
+                                .addTo(mapInstance.current);
+                        })
+                        .catch(err => {
+                            console.error('Geocoding error:', err);
+                            setMessage('Failed to get city/state. Using coordinates.');
+                            setMessageType('error');
+                            setFormData(prev => ({ ...prev, pickupLocation: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` }));
+                        })
+                        .finally(() => setIsLocating(false));
+                },
+                (error) => {
+                    console.error("Geolocation error:", error);
+                    setLocationStatus('error');
+                    setMessage('Unable to retrieve location.');
+                    setMessageType('error');
+                    setIsLocating(false);
+                }
+            );
+        } else {
+            setLocationStatus('error');
+            setMessage('Geolocation is not supported by your browser.');
+            setMessageType('error');
+            setIsLocating(false);
+        }
+    }, []);
+
+    // --- Trip Planning Logic ---
+    const calculateTripSchedule = (totalDrivingHours, cycleUsed) => {
+        const schedule = [];
+        let remainingHours = totalDrivingHours;
+        let remainingCycle = 70 - parseFloat(cycleUsed);
+        let days = 1;
+
+        while (remainingHours > 0) {
+            const daySchedule = { driving: 0, onDuty: 0, offDuty: 0, sleeper: 0 };
+            const dailyDrivingLimit = 11;
+            const dailyOnDutyLimit = 14;
+
+            let drivingThisDay = 0;
+            let onDutyThisDay = 0;
+
+            // Start of day, 1 hour on-duty for pre-trip inspection
+            onDutyThisDay += 1;
+
+            // Calculate driving time for the day
+            const drivableHours = Math.min(remainingHours, dailyDrivingLimit);
+            drivingThisDay = drivableHours;
+            remainingHours -= drivingThisDay;
+
+            // Add 1 hour on-duty for post-trip/drop-off
+            onDutyThisDay += 1;
+
+            // Check if a 30-minute break is needed after 8 hours of driving
+            if (drivingThisDay >= 8) {
+                 onDutyThisDay += 0.5; // 30-minute break
+            }
+
+            // Check if we exceed the on-duty limit
+            if (drivingThisDay + onDutyThisDay > dailyOnDutyLimit) {
+                 drivingThisDay = dailyOnDutyLimit - onDutyThisDay;
+                 remainingHours += (drivableHours - drivingThisDay);
+                 daySchedule.driving = drivingThisDay;
+                 daySchedule.onDuty = onDutyThisDay;
+            } else {
+                 daySchedule.driving = drivingThisDay;
+                 daySchedule.onDuty = onDutyThisDay;
+            }
+
+            const totalDailyHours = daySchedule.driving + daySchedule.onDuty;
+            daySchedule.offDuty = 24 - totalDailyHours;
+
+            // Check for sleeper berth and split-sleeper options for future implementation
+            // The current logic assumes a simple on/off duty schedule.
+
+            schedule.push(daySchedule);
+            days++;
+            // Reset cycle after 8 days
+            if ((days - 1) % 8 === 0) {
+                 remainingCycle = 70;
+            }
+        }
+        return schedule;
+    };
+
+    const handlePlanTrip = async (e) => {
+        e.preventDefault();
+        if (!db || !userId) {
+            setMessage("Authentication is not ready. Please wait.");
+            setMessageType('error');
+            return;
+        }
+
+        setIsLoading(true);
+        setMessage('Calculating route...');
+        setMessageType('info');
+
+        try {
+            // Geocoding for pickup and dropoff
+            const pickupGeo = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(formData.pickupLocation)}&format=json&limit=1`).then(res => res.json());
+            const dropoffGeo = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(formData.dropoffLocation)}&format=json&limit=1`).then(res => res.json());
+
+            if (pickupGeo.length === 0 || dropoffGeo.length === 0) {
+                setMessage("Could not find locations. Please be more specific.");
+                setMessageType('error');
+                setIsLoading(false);
+                return;
+            }
+
+            const startCoords = [parseFloat(pickupGeo[0].lon), parseFloat(pickupGeo[0].lat)];
+            const endCoords = [parseFloat(dropoffGeo[0].lon), parseFloat(dropoffGeo[0].lat)];
+
+            // OSRM routing API call
+            const osrmUrl = `http://router.project-osrm.org/route/v1/driving/${startCoords.join(',')};${endCoords.join(',')}?geometries=geojson&steps=true`;
+            setMessage('Getting routing instructions...');
+            const routeRes = await fetch(osrmUrl).then(res => res.json());
+
+            if (routeRes.code !== 'Ok' || !routeRes.routes[0]) {
+                setMessage("Could not find a valid route. Please check your locations.");
+                setMessageType('error');
+                setIsLoading(false);
+                return;
+            }
+
+            const route = routeRes.routes[0];
+            const distanceMeters = route.distance;
+            const durationSeconds = route.duration;
+
+            const distanceMiles = (distanceMeters * 0.000621371).toFixed(2);
+            const totalDrivingHours = (durationSeconds / 3600).toFixed(2);
+
+            const totalHours = parseFloat(totalDrivingHours) + 2; // 1 hr pickup, 1 hr dropoff
+            const schedule = calculateTripSchedule(totalHours, formData.cycleUsed);
+
+            const newTrip = {
+                ...formData,
+                distanceMiles: distanceMiles,
+                totalDrivingHours: totalDrivingHours,
+                totalHours: totalHours.toFixed(2),
+                logSchedule: schedule,
+                route: route.geometry,
+                createdAt: new Date()
+            };
+
+            await addDoc(collection(db, `artifacts/${__app_id}/users/${userId}/trips`), newTrip);
+            setSelectedTrip(newTrip);
+            setMessage('Trip planned and saved successfully!');
+            setMessageType('success');
+            setIsLoading(false);
+        } catch (error) {
+            setMessage("An error occurred. Please try again.");
+            setMessageType('error');
+            console.error("Error during trip planning:", error);
+            setIsLoading(false);
+        }
+    };
+
+    // --- ELD Log Canvas Drawing ---
+    const drawEldLog = useCallback((trip, dayIndex) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const schedule = trip.logSchedule[dayIndex];
+        if (!schedule) return;
+
+        const margin = 20;
+        const logHeight = canvas.height - 2 * margin;
+        const logWidth = canvas.width - 2 * margin;
+        const hourMarkerInterval = logWidth / 24;
+        const statusHeight = logHeight / 4;
+
+        // Draw hour markers
+        ctx.fillStyle = '#555';
+        ctx.font = '10px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        for (let i = 0; i <= 24; i++) {
+            const x = margin + i * hourMarkerInterval;
+            ctx.moveTo(x, margin);
+            ctx.lineTo(x, canvas.height - margin);
+            ctx.fillText(i, x, margin - 5);
+        }
+
+        // Draw status lines
+        const statuses = ['Off Duty', 'Sleeper Berth', 'Driving', 'On Duty'];
+        ctx.textAlign = 'left';
+        ctx.font = '12px Inter, sans-serif';
+        statuses.forEach((status, index) => {
+            const y = margin + index * statusHeight;
+            ctx.fillText(status, margin + 5, y + statusHeight / 2 + 5);
+        });
+
+        // Draw log line
+        ctx.beginPath();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#3b82f6';
+        let currentTime = 0;
+
+        // Off Duty (initial state)
+        const offDutyStart = currentTime;
+        const offDutyEnd = offDutyStart + (schedule.offDuty || 0);
+        ctx.moveTo(margin + (offDutyStart * hourMarkerInterval), margin + 0.5 * statusHeight);
+        ctx.lineTo(margin + (offDutyEnd * hourMarkerInterval), margin + 0.5 * statusHeight);
+        currentTime = offDutyEnd;
+
+        // Sleeper Berth (if applicable)
+        const sleeperStart = currentTime;
+        const sleeperEnd = sleeperStart + (schedule.sleeper || 0);
+        ctx.lineTo(margin + (sleeperStart * hourMarkerInterval), margin + 1.5 * statusHeight);
+        ctx.lineTo(margin + (sleeperEnd * hourMarkerInterval), margin + 1.5 * statusHeight);
+        currentTime = sleeperEnd;
+
+        // Driving
+        const drivingStart = currentTime;
+        const drivingEnd = drivingStart + (schedule.driving || 0);
+        ctx.lineTo(margin + (drivingStart * hourMarkerInterval), margin + 2.5 * statusHeight);
+        ctx.lineTo(margin + (drivingEnd * hourMarkerInterval), margin + 2.5 * statusHeight);
+        currentTime = drivingEnd;
+
+        // On Duty
+        const onDutyStart = currentTime;
+        const onDutyEnd = onDutyStart + (schedule.onDuty || 0);
+        ctx.lineTo(margin + (onDutyStart * hourMarkerInterval), margin + 3.5 * statusHeight);
+        ctx.lineTo(margin + (onDutyEnd * hourMarkerInterval), margin + 3.5 * statusHeight);
+
+        ctx.stroke();
+    }, []);
+
+    useEffect(() => {
+        if (activeTab === 'logs' && selectedTrip) {
+            drawEldLog(selectedTrip, currentPage);
+        }
+    }, [activeTab, selectedTrip, currentPage, drawEldLog]);
+
+    // --- UI Rendering ---
+    const renderPage = () => {
+        switch (activeTab) {
+            case 'home':
+                return (
+                    <div className="flex flex-col lg:flex-row lg:space-x-6">
+                        <div className="lg:w-1/3 mb-6 lg:mb-0 p-4 bg-gray-50 rounded-lg border shadow-sm">
+                            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center space-x-2">
+                                <ClipboardPenLine className="w-5 h-5 text-indigo-600" />
+                                <span>Plan Your Trip</span>
+                            </h2>
+                            <form onSubmit={handlePlanTrip} className="space-y-4">
+                                <div>
+                                    <label htmlFor="pickupLocation" className="block text-sm font-medium text-gray-700">Pickup Location</label>
+                                    <div className="mt-1 flex rounded-md shadow-sm">
+                                        <input
+                                            type="text"
+                                            id="pickupLocation"
+                                            name="pickupLocation"
+                                            value={formData.pickupLocation}
+                                            onChange={(e) => setFormData(prev => ({ ...prev, pickupLocation: e.target.value }))}
+                                            placeholder="E.g., Dallas, TX"
+                                            required
+                                            className="flex-1 block w-full rounded-l-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleLocateMe}
+                                            className="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 rounded-r-md bg-gray-50 text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+                                            disabled={isLocating}
+                                        >
+                                            {isLocating ? <Loader className="animate-spin h-5 w-5" /> : <Locate className="h-5 w-5" />}
+                                        </button>
+                                    </div>
+                                    {locationStatus === 'success' && <p className="text-xs text-green-600 mt-1">Location found!</p>}
+                                    {locationStatus === 'error' && <p className="text-xs text-red-600 mt-1">Failed to find location.</p>}
+                                </div>
+                                <div>
+                                    <label htmlFor="dropoffLocation" className="block text-sm font-medium text-gray-700">Dropoff Location</label>
+                                    <input
+                                        type="text"
+                                        id="dropoffLocation"
+                                        name="dropoffLocation"
+                                        value={formData.dropoffLocation}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, dropoffLocation: e.target.value }))}
+                                        placeholder="E.g., Miami, FL"
+                                        required
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="cycleUsed" className="block text-sm font-medium text-gray-700">Current Cycle Used (Hrs)</label>
+                                    <input
+                                        type="number"
+                                        id="cycleUsed"
+                                        name="cycleUsed"
+                                        value={formData.cycleUsed}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, cycleUsed: e.target.value }))}
+                                        placeholder="E.g., 20"
+                                        min="0"
+                                        step="0.1"
+                                        required
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    />
+                                </div>
+                                <button
+                                    type="submit"
+                                    disabled={isLoading}
+                                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                                >
+                                    {isLoading ? (
+                                        <>
+                                            <Loader className="animate-spin -ml-1 mr-3 h-5 w-5" />
+                                            Planning...
+                                        </>
+                                    ) : 'Plan Trip'}
+                                </button>
+                            </form>
+                        </div>
+                        <div className="lg:w-2/3 p-4 bg-gray-50 rounded-lg border shadow-sm">
+                            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center space-x-2">
+                                <MapPin className="w-5 h-5 text-indigo-600" />
+                                <span>Route & Schedule</span>
+                            </h2>
+                            <div ref={mapRef} id="map" className="h-96 rounded-lg mb-4 bg-gray-200"></div>
+                            {selectedTrip && (
+                                <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Trip Summary</h3>
+                                    <ul className="space-y-1 text-sm text-gray-700">
+                                        <li className="flex justify-between items-center"><span className="font-medium">Total Distance:</span> <span>{selectedTrip.distanceMiles} miles</span></li>
+                                        <li className="flex justify-between items-center"><span className="font-medium">Total Driving Time:</span> <span>{selectedTrip.totalDrivingHours} hours</span></li>
+                                        <li className="flex justify-between items-center"><span className="font-medium">Planned On-Duty Time:</span> <span>{selectedTrip.totalHours} hours</span></li>
+                                        <li className="flex justify-between items-center"><span className="font-medium">Log Sheets Required:</span> <span>{selectedTrip.logSchedule.length}</span></li>
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            case 'logs':
+                return (
+                    <div className="flex flex-col lg:flex-row lg:space-x-6">
+                        <div className="lg:w-1/3 mb-6 lg:mb-0 p-4 bg-gray-50 rounded-lg border shadow-sm">
+                            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center space-x-2">
+                                <ListChecks className="w-5 h-5 text-indigo-600" />
+                                <span>Planned Trips</span>
+                            </h2>
+                            {tripData.length === 0 ? (
+                                <p className="text-gray-500 text-sm">No trips planned yet. Go to the "Plan Trip" tab to get started!</p>
+                            ) : (
+                                <ul className="space-y-2 max-h-96 overflow-y-auto">
+                                    {tripData.map(trip => (
+                                        <li
+                                            key={trip.id}
+                                            onClick={() => { setSelectedTrip(trip); setCurrentPage(0); }}
+                                            className={`cursor-pointer p-3 rounded-lg border transition-colors duration-200 ${selectedTrip?.id === trip.id ? 'bg-indigo-100 border-indigo-500 shadow-md' : 'bg-white hover:bg-gray-100'}`}
+                                        >
+                                            <div className="text-sm font-semibold text-gray-900">{trip.pickupLocation} to {trip.dropoffLocation}</div>
+                                            <div className="text-xs text-gray-500">
+                                                <span>Planned: {new Date(trip.createdAt.seconds * 1000).toLocaleDateString()}</span>
+                                                <span className="ml-2">({trip.distanceMiles} mi)</span>
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                        <div className="lg:w-2/3 p-4 bg-gray-50 rounded-lg border shadow-sm">
+                            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center space-x-2">
+                                <TrendingUp className="w-5 h-5 text-indigo-600" />
+                                <span>ELD Log Sheet</span>
+                            </h2>
+                            {selectedTrip ? (
+                                <div>
+                                    <div className="mb-4 text-center">
+                                        <p className="text-lg font-semibold text-gray-800">Log Sheet for Day {currentPage + 1}</p>
+                                        <p className="text-sm text-gray-600">Trip from <span className="text-indigo-600">{selectedTrip.pickupLocation}</span> to <span className="text-indigo-600">{selectedTrip.dropoffLocation}</span></p>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <canvas ref={canvasRef} width="1000" height="300" className="bg-white border rounded-lg shadow-sm"></canvas>
+                                    </div>
+                                    <div className="flex justify-center mt-4 space-x-4">
+                                        <button
+                                            onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
+                                            disabled={currentPage === 0}
+                                            className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-medium disabled:opacity-50"
+                                        >Previous Day</button>
+                                        <button
+                                            onClick={() => setCurrentPage(prev => Math.min(selectedTrip.logSchedule.length - 1, prev + 1))}
+                                            disabled={currentPage === selectedTrip.logSchedule.length - 1}
+                                            className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-medium disabled:opacity-50"
+                                        >Next Day</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-center p-8 text-gray-500">
+                                    Select a trip from the list to view its ELD log.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            case 'reports':
+                return (
+                    <div className="flex flex-col lg:flex-row lg:space-x-6">
+                        <div className="w-full p-4 bg-gray-50 rounded-lg border shadow-sm">
+                            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center space-x-2">
+                                <TrendingUp className="w-5 h-5 text-indigo-600" />
+                                <span>Trip Reports</span>
+                            </h2>
+                            {tripData.length === 0 ? (
+                                <p className="text-gray-500 text-sm text-center">No trip data available to generate reports.</p>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full divide-y divide-gray-200">
+                                        <thead className="bg-gray-200">
+                                            <tr>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Origin</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Destination</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Distance (mi)</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Driving (hrs)</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Log Sheets</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-gray-200">
+                                            {tripData.map(trip => (
+                                                <tr key={trip.id}>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{trip.pickupLocation}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{trip.dropoffLocation}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{trip.distanceMiles}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{trip.totalDrivingHours}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{trip.logSchedule.length}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            default:
+                return null;
+        }
+    };
 
     return (
-      <div className={`rounded-lg p-4 flex items-center space-x-2 mt-4 shadow-sm ${bgColor} ${textColor}`}>
-        {icon}
-        <p className="text-sm font-medium">{text}</p>
-      </div>
-    );
-  };
+        <div className="min-h-screen bg-gray-100 font-inter text-gray-800 p-4 antialiased">
+            <style>
+                {`
+                body { font-family: 'Inter', sans-serif; }
+                #map { min-height: 400px; }
+                .antialiased { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+                .animate-spin { animation: spin 1s linear infinite; }
+                `}
+            </style>
+            <script src="https://cdn.tailwindcss.com"></script>
+            <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+            <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet" />
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-  // Helper for tab styling
-  const tabButtonClass = (tabName) =>
-    `px-4 py-2 rounded-full transition-colors duration-200 font-medium ${
-      activeTab === tabName
-        ? 'bg-indigo-600 text-white shadow-md'
-        : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'
-    }`;
-
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl bg-white rounded-xl shadow-2xl overflow-hidden">
-        <Mapbox />
-        <div className="flex flex-col md:flex-row h-full">
-          {/* Main Content Area */}
-          <div className="flex-1 p-8 overflow-y-auto">
-            <header className="flex items-center justify-between pb-6 border-b border-gray-200 mb-6">
-              <h1 className="text-3xl font-extrabold text-gray-900 flex items-center gap-2">
-                <Truck size={36} className="text-indigo-600" />
-                FleetTrack
-              </h1>
-              <div className="text-sm text-gray-500">
-                User ID: <span className="font-mono text-gray-800 break-all">{userId || 'Loading...'}</span>
-              </div>
+            <header className="mb-6 flex flex-col sm:flex-row justify-between items-center">
+                <div className="flex items-center space-x-2">
+                    <Truck className="h-8 w-8 text-indigo-600" />
+                    <h1 className="text-3xl font-bold text-gray-900">FleetTrack</h1>
+                </div>
+                {userId && (
+                    <div className="mt-2 sm:mt-0 flex items-center space-x-2 text-sm text-gray-600">
+                        <span>User ID: <span className="font-mono text-gray-700 break-all">{userId}</span></span>
+                    </div>
+                )}
             </header>
 
-            {/* Navigation Tabs */}
-            <nav className="mb-8">
-              <ul className="flex justify-center md:justify-start space-x-2 md:space-x-4 p-1 bg-gray-200 rounded-full">
-                <li><button onClick={() => setActiveTab('home')} className={tabButtonClass('home')}><MapPin size={18} className="inline mr-2" />Trip Input</button></li>
-                <li><button onClick={() => setActiveTab('logs')} className={tabButtonClass('logs')}><ListChecks size={18} className="inline mr-2" />Daily Logs</button></li>
-                <li><button onClick={() => setActiveTab('reports')} className={tabButtonClass('reports')}><TrendingUp size={18} className="inline mr-2" />Reports</button></li>
-              </ul>
+            <nav className="mb-6 bg-white p-2 rounded-xl shadow-lg border border-gray-200">
+                <ul className="flex justify-around sm:justify-start sm:space-x-4">
+                    <li>
+                        <button
+                            onClick={() => setActiveTab('home')}
+                            className={`flex items-center space-x-2 px-4 py-2 rounded-full transition-colors duration-200 ${activeTab === 'home' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'}`}
+                        >
+                            <MapPin className="h-5 w-5" />
+                            <span className="font-medium">Plan Trip</span>
+                        </button>
+                    </li>
+                    <li>
+                        <button
+                            onClick={() => setActiveTab('logs')}
+                            className={`flex items-center space-x-2 px-4 py-2 rounded-full transition-colors duration-200 ${activeTab === 'logs' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'}`}
+                        >
+                            <ListChecks className="h-5 w-5" />
+                            <span className="font-medium">ELD Logs</span>
+                        </button>
+                    </li>
+                    <li>
+                        <button
+                            onClick={() => setActiveTab('reports')}
+                            className={`flex items-center space-x-2 px-4 py-2 rounded-full transition-colors duration-200 ${activeTab === 'reports' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'}`}
+                        >
+                            <TrendingUp className="h-5 w-5" />
+                            <span className="font-medium">Reports</span>
+                        </button>
+                    </li>
+                </ul>
             </nav>
 
-            {/* Tab Content */}
-            <div className="tab-content">
-              {activeTab === 'home' && (
-                <div className="space-y-6">
-                  <div className="p-6 bg-indigo-50 rounded-lg shadow-inner">
-                    <h2 className="text-2xl font-bold text-indigo-800 mb-4 flex items-center gap-2"><Info size={24} />Trip Details</h2>
-                    <p className="text-indigo-700">Fill out the form below to get your route instructions and daily logs.</p>
-                  </div>
-                  <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); handleCreateTrip(); }}>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <label htmlFor="origin" className="text-sm font-medium text-gray-700 flex items-center gap-2"><MapPin size={16} />Current Location</label>
-                        <input type="text" id="origin" name="origin" value={formData.origin} onChange={handleInputChange} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 transition" placeholder="Enter current location" required />
-                      </div>
-                      <div className="space-y-2">
-                        <label htmlFor="destination" className="text-sm font-medium text-gray-700 flex items-center gap-2"><Star size={16} />Dropoff Location</label>
-                        <input type="text" id="destination" name="destination" value={formData.destination} onChange={handleInputChange} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 transition" placeholder="Enter dropoff location" required />
-                      </div>
-                      <div className="space-y-2">
-                        <label htmlFor="driverName" className="text-sm font-medium text-gray-700 flex items-center gap-2"><User size={16} />Driver Name</label>
-                        <input type="text" id="driverName" name="driverName" value={formData.driverName} onChange={handleInputChange} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 transition" placeholder="e.g., John Doe" required />
-                      </div>
-                      <div className="space-y-2">
-                        <label htmlFor="cycleUsed" className="text-sm font-medium text-gray-700 flex items-center gap-2"><Gauge size={16} />Current Cycle Used (Hrs)</label>
-                        <input type="number" id="cycleUsed" name="cycleUsed" value={formData.cycleUsed} onChange={handleInputChange} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 transition" placeholder="e.g., 20" required />
-                      </div>
-                      <div className="space-y-2">
-                        <label htmlFor="vehicleNumber" className="text-sm font-medium text-gray-700 flex items-center gap-2"><Truck size={16} />Vehicle Number</label>
-                        <input type="text" id="vehicleNumber" name="vehicleNumber" value={formData.vehicleNumber} onChange={handleInputChange} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 transition" placeholder="e.g., V-12345" required />
-                      </div>
-                      <div className="space-y-2">
-                        <label htmlFor="date" className="text-sm font-medium text-gray-700 flex items-center gap-2"><Calendar size={16} />Date</label>
-                        <input type="date" id="date" name="date" value={formData.date} onChange={handleInputChange} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 transition" required />
-                      </div>
+            <main className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+                {message && (
+                    <div className={`flex items-center p-4 mb-4 rounded-lg text-white font-medium ${messageType === 'success' ? 'bg-green-500' : 'bg-red-500'}`}>
+                        {messageType === 'success' ? <CheckCircle className="h-5 w-5 mr-2" /> : <XCircle className="h-5 w-5 mr-2" />}
+                        {message}
                     </div>
-                    <Message text={message} type={messageType} />
-                    <button type="submit" className="w-full py-3 px-6 bg-indigo-600 text-white rounded-lg shadow-lg hover:bg-indigo-700 transition-colors duration-300 font-semibold flex items-center justify-center gap-2" disabled={isLoading}>
-                      {isLoading ? <Loader size={20} className="animate-spin" /> : <ListChecks size={20} />}
-                      {isLoading ? 'Creating Trip...' : 'Create Trip & View Logs'}
-                    </button>
-                  </form>
-                </div>
-              )}
-              {activeTab === 'logs' && (
-                <div className="space-y-6">
-                  <div className="p-6 bg-blue-50 rounded-lg shadow-inner">
-                    <h2 className="text-2xl font-bold text-blue-800 mb-4 flex items-center gap-2"><ListChecks size={24} />Daily Logs</h2>
-                    <p className="text-blue-700">Here you can view your automatically generated daily logs.</p>
-                  </div>
-                  {tripLogs.length === 0 ? (
-                    <div className="text-center p-8 text-gray-500">No trips created yet.</div>
-                  ) : (
-                    <div className="space-y-4">
-                      {tripLogs.map((log) => (
-                        <DailyLogSheet
-                          key={log.id}
-                          date={log.date}
-                          logEntries={log.logs[0].log_entries}
-                          driverName={log.driverName}
-                          vehicleNumber={log.vehicleNumber}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              {activeTab === 'reports' && (
-                <div className="space-y-6">
-                  <div className="p-6 bg-green-50 rounded-lg shadow-inner">
-                    <h2 className="text-2xl font-bold text-green-800 mb-4 flex items-center gap-2"><TrendingUp size={24} />Reports</h2>
-                    <p className="text-green-700">View performance reports and historical data for your trips.</p>
-                  </div>
-                  <div className="space-y-6">
-                    {tripLogs.length === 0 ? (
-                      <div className="text-center p-8 text-gray-500">No trips created yet.</div>
-                    ) : (
-                      <div className="p-6 bg-white rounded-lg shadow-sm">
-                        <h3 className="text-xl font-bold mb-4">Trip Summary</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                          <div className="flex items-center gap-2 p-4 bg-gray-100 rounded-lg">
-                            <Clock size={24} className="text-indigo-500" />
-                            <div>
-                              <p className="text-sm text-gray-500">Total Driving Hours</p>
-                              <p className="font-semibold text-lg">{tripLogs[0].route.duration_hours} hrs</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 p-4 bg-gray-100 rounded-lg">
-                            <Gauge size={24} className="text-orange-500" />
-                            <div>
-                              <p className="text-sm text-gray-500">Total Miles</p>
-                              <p className="font-semibold text-lg">{tripLogs[0].route.distance_miles} miles</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 p-4 bg-gray-100 rounded-lg">
-                            <Bed size={24} className="text-red-500" />
-                            <div>
-                              <p className="text-sm text-gray-500">Scheduled Rests</p>
-                              <p className="font-semibold text-lg">{tripLogs[0].route.stops.filter(s => s.type === 'rest').length} stops</p>
-                            </div>
-                          </div>
-                        </div>
-                        <h3 className="text-xl font-bold mt-8 mb-4">Trip Route & Stops</h3>
-                        <ul className="space-y-4">
-                          {tripLogs[0].route.stops.map((stop, index) => (
-                            <li key={index} className="flex items-start gap-3 p-4 bg-gray-100 rounded-lg shadow-sm">
-                              <MapPin size={24} className="text-green-600 flex-shrink-0 mt-1" />
-                              <div>
-                                <h4 className="font-semibold text-lg flex items-center gap-2">{stop.location}</h4>
-                                <p className="text-sm text-gray-600">{stop.notes}</p>
-                                {stop.type === 'rest' && <p className="text-xs text-gray-500 mt-1">Duration: {stop.duration} hrs</p>}
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+                )}
+                {renderPage()}
+            </main>
         </div>
-      </div>
-    </div>
-  );
+    );
 };
 
 export default App;

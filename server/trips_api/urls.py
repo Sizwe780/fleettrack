@@ -1,8 +1,6 @@
-from django.contrib import admin
-from django.urls import path, include
+from django.urls import path
+from .views import TripPlannerView
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    # Add your new API endpoint here
-    path('api/', include('trips_api.urls')),
+    path('plan-trip/', TripPlannerView.as_view(), name='plan_trip'),
 ]
