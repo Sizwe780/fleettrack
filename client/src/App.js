@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote, Fuel, Bed, Database, ListChecks, TrendingUp, Info } from 'lucide-react';
-import { createRoot } from 'react-dom/client';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth';
-import { getFirestore, doc, getDoc, addDoc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, addDoc, onSnapshot, collection } from 'firebase/firestore';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
@@ -29,6 +28,7 @@ const App = () => {
   const [auth, setAuth] = useState(null);
   const [user, setUser] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isMapboxLoaded, setIsMapboxLoaded] = useState(false);
 
   const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2U3ODAiLCJhIjoiY2x1d2R5ZGZqMGQwMTJpcXBtYXk2dW1icSJ9.9j1hS_x2n3K7x_j5l001Q';
   const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -64,6 +64,24 @@ const App = () => {
     }
   }, []);
 
+  useEffect(() => {
+    const loadScripts = () => {
+      const mapboxglScript = document.createElement('script');
+      mapboxglScript.src = 'https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.js';
+      mapboxglScript.onload = () => {
+        const polylineScript = document.createElement('script');
+        polylineScript.src = 'https://cdn.jsdelivr.net/npm/@mapbox/polyline@1.1.1/src/polyline.min.js';
+        polylineScript.onload = () => {
+          setIsMapboxLoaded(true);
+        };
+        document.body.appendChild(polylineScript);
+      };
+      document.body.appendChild(mapboxglScript);
+    };
+
+    loadScripts();
+  }, []);
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prevData => ({
@@ -88,14 +106,14 @@ const App = () => {
     setIsLocating(true);
     setLocationStatus(null);
     setMessage('');
-    if (navigator.geolocation) {
+    if (navigator.geolocation && isMapboxLoaded) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
           fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${MAPBOX_ACCESS_TOKEN}`)
             .then(response => response.json())
             .then(data => {
-              const placeName = data.features[0]?.place_name || `Lat: ${latitude}, Lng: ${longitude}`;
+              const placeName = data.features?.[0]?.place_name || `Lat: ${latitude}, Lng: ${longitude}`;
               setCurrentLocation(placeName);
               setLocationStatus('success');
               setIsLocating(false);
@@ -121,7 +139,7 @@ const App = () => {
         { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
       );
     } else {
-      setMessage('Geolocation is not supported by your browser.');
+      setMessage('Geolocation is not supported or Mapbox is not yet loaded.');
       setMessageType('error');
       setLocationStatus('error');
       setIsLocating(false);
@@ -195,8 +213,8 @@ const App = () => {
     setMessageType('');
     setIsLoading(true);
 
-    if (!isAuthReady || !user) {
-      setMessage('Authentication is not ready. Please try again.');
+    if (!isAuthReady || !user || !isMapboxLoaded) {
+      setMessage('Application not ready. Please wait a moment and try again.');
       setMessageType('error');
       setIsLoading(false);
       return;
@@ -205,7 +223,7 @@ const App = () => {
     const geocode = async (location) => {
       const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(location)}.json?access_token=${MAPBOX_ACCESS_TOKEN}`);
       const data = await response.json();
-      if (data.features && data.features.length > 0) {
+      if (data.features?.length > 0) {
         return data.features[0].geometry.coordinates;
       }
       throw new Error(`Could not find coordinates for ${location}`);
@@ -221,7 +239,7 @@ const App = () => {
       const routeRes = await fetch(routeUrl);
       const routeData = await routeRes.json();
       
-      if (routeData.routes && routeData.routes.length > 0) {
+      if (routeData.routes?.[0]) {
         const route = routeData.routes[0];
         const totalDistanceMiles = route.distance / 1609.34;
         
@@ -229,14 +247,7 @@ const App = () => {
 
         const newMapData = {
           routePolyline: route.geometry,
-          stops: stops.map(stop => {
-            const routePoint = Math.floor(Math.random() * route.geometry.length);
-            return {
-              ...stop,
-              lat: route.geometry[routePoint][1],
-              lng: route.geometry[routePoint][0],
-            };
-          })
+          stops: stops
         };
         setMapData(newMapData);
         setLogData(logs);
@@ -275,10 +286,10 @@ const App = () => {
     const map = useRef(null);
   
     useEffect(() => {
-      if (!mapData || !window.mapboxgl || !mapContainer.current) {
+      if (!isMapboxLoaded || !mapData || !mapContainer.current) {
         return;
       }
-      
+  
       if (map.current) {
         map.current.remove();
         map.current = null;
@@ -293,9 +304,9 @@ const App = () => {
       });
   
       map.current.on('load', () => {
-        const coordinates = window.mapboxgl.GeometryUtil.decode(mapData.routePolyline);
+        const coordinates = window.mapboxgl.GeometryUtil?.decode(mapData.routePolyline);
         
-        if (coordinates.length > 0) {
+        if (coordinates?.length > 0) {
           map.current.addSource('route', {
             'type': 'geojson',
             'data': {
@@ -328,7 +339,7 @@ const App = () => {
           map.current.fitBounds(bounds, { padding: 50 });
         }
   
-        mapData.stops.forEach(stop => {
+        mapData.stops?.forEach(stop => {
           const markerColor = stop.type === 'fuel' ? '#f59e0b' : '#10b981';
           new window.mapboxgl.Marker({ color: markerColor })
             .setLngLat([stop.lng, stop.lat])
@@ -343,7 +354,7 @@ const App = () => {
           map.current = null;
         }
       };
-    }, [mapData]);
+    }, [mapData, isMapboxLoaded]);
   
     if (!mapData) {
       return (
@@ -352,6 +363,15 @@ const App = () => {
         </div>
       );
     }
+
+    if (!isMapboxLoaded) {
+      return (
+        <div className="flex items-center justify-center h-96 p-8 text-center text-gray-500">
+          <p>Loading map dependencies...</p>
+        </div>
+      );
+    }
+
     return <div ref={mapContainer} className="h-[600px] w-full rounded-2xl shadow-xl" />;
   };
 
@@ -731,7 +751,7 @@ const App = () => {
                     <button
                       type="button"
                       onClick={handleGetCurrentLocation}
-                      disabled={isLocating}
+                      disabled={isLocating || !isMapboxLoaded}
                       className={`
                         w-8 h-8 rounded-full flex items-center justify-center text-white transition-colors duration-300
                         ${isLocating ? 'bg-indigo-400' :
@@ -868,7 +888,7 @@ const App = () => {
                   <button
                     type="submit"
                     className="w-full md:w-auto px-12 py-4 bg-indigo-600 text-white font-semibold rounded-full shadow-lg hover:bg-indigo-700 transition duration-300 transform hover:scale-105 disabled:bg-indigo-400"
-                    disabled={isLoading || !isAuthReady}
+                    disabled={isLoading || !isAuthReady || !isMapboxLoaded}
                   >
                     {isLoading ? 'Planning Trip...' : 'Plan Trip'}
                   </button>
@@ -900,8 +920,6 @@ const App = () => {
     <div className="bg-gray-100 min-h-screen font-sans antialiased">
       <script src="https://cdn.tailwindcss.com"></script>
       <link href="https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.css" rel="stylesheet" />
-      <script src="https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.js"></script>
-      <script src="https://cdn.jsdelivr.net/npm/@mapbox/polyline@1.1.1/src/polyline.min.js"></script>
       <header className="bg-white shadow-sm py-4 px-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Truck className="text-indigo-600" />
