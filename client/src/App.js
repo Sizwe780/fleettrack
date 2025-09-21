@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, addDoc, onSnapshot, collection, query } from 'firebase/firestore';
-import { Truck, MapPin, Calendar, Gauge, Info, CheckCircle, XCircle, Locate, Loader, ListChecks, TrendingUp, Fuel, Bed, ClipboardPenLine } from 'lucide-react';
+import { getFirestore, doc, addDoc, onSnapshot, collection, query, setDoc, getDoc } from 'firebase/firestore';
+import { Truck, MapPin, Calendar, Gauge, Info, CheckCircle, XCircle, Locate, Loader, ListChecks, TrendingUp, Fuel, Bed, ClipboardPenLine, User, Home, BookA } from 'lucide-react';
 import { createRoot } from 'react-dom/client';
 
 // Main App component
@@ -13,6 +13,11 @@ const App = () => {
         pickupLocation: '',
         dropoffLocation: '',
         cycleUsed: ''
+    });
+    const [profileData, setProfileData] = useState({
+        driverName: '',
+        vehicleNumber: '',
+        homeTerminal: ''
     });
     const [message, setMessage] = useState('');
     const [messageType, setMessageType] = useState('');
@@ -27,6 +32,7 @@ const App = () => {
     const [db, setDb] = useState(null);
     const [auth, setAuth] = useState(null);
     const [userId, setUserId] = useState(null);
+    const [profileIsLoading, setProfileIsLoading] = useState(true);
 
     // Canvas and Mapbox references
     const canvasRef = useRef(null);
@@ -84,6 +90,26 @@ const App = () => {
         return () => unsubscribe();
     }, [db, userId]);
 
+    // Fetch profile data from Firestore
+    useEffect(() => {
+        if (!db || !userId) return;
+        const fetchProfile = async () => {
+            setProfileIsLoading(true);
+            try {
+                const profileDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/profile/userProfile`);
+                const profileDoc = await getDoc(profileDocRef);
+                if (profileDoc.exists()) {
+                    setProfileData(profileDoc.data());
+                }
+            } catch (error) {
+                console.error("Error fetching profile:", error);
+            } finally {
+                setProfileIsLoading(false);
+            }
+        };
+        fetchProfile();
+    }, [db, userId]);
+
     // --- Mapbox Initialization and Route Drawing ---
     useEffect(() => {
         if (activeTab === 'home' && mapRef.current && !mapInstance.current) {
@@ -136,7 +162,7 @@ const App = () => {
             }
 
             // Fit map to route bounds
-            const coordinates = geojson.features[0].geometry.coordinates;
+            const coordinates = geojson.coordinates;
             const bounds = coordinates.reduce((bounds, coord) => {
                 return bounds.extend(coord);
             }, new mapbox.current.LngLatBounds(coordinates[0], coordinates[0]));
@@ -200,49 +226,38 @@ const App = () => {
         let days = 1;
 
         while (remainingHours > 0) {
-            const daySchedule = { driving: 0, onDuty: 0, offDuty: 0, sleeper: 0 };
-            const dailyDrivingLimit = 11;
-            const dailyOnDutyLimit = 14;
+            const daySchedule = { offDuty: 0, sleeper: 0, driving: 0, onDuty: 0 };
+            const maxDrivingToday = Math.min(11, remainingHours, remainingCycle);
+            
+            daySchedule.driving = maxDrivingToday;
+            remainingHours -= daySchedule.driving;
+            remainingCycle -= daySchedule.driving;
 
-            let drivingThisDay = 0;
-            let onDutyThisDay = 0;
-
-            // Start of day, 1 hour on-duty for pre-trip inspection
-            onDutyThisDay += 1;
-
-            // Calculate driving time for the day
-            const drivableHours = Math.min(remainingHours, dailyDrivingLimit);
-            drivingThisDay = drivableHours;
-            remainingHours -= drivingThisDay;
-
-            // Add 1 hour on-duty for post-trip/drop-off
-            onDutyThisDay += 1;
-
-            // Check if a 30-minute break is needed after 8 hours of driving
-            if (drivingThisDay >= 8) {
-                 onDutyThisDay += 0.5; // 30-minute break
+            let onDutyTime = 0;
+            // Add 1 hour for pre-trip/post-trip
+            onDutyTime += 1;
+            // 30 minute break after 8 hours of driving
+            if (daySchedule.driving >= 8) {
+                onDutyTime += 0.5;
             }
-
-            // Check if we exceed the on-duty limit
-            if (drivingThisDay + onDutyThisDay > dailyOnDutyLimit) {
-                 drivingThisDay = dailyOnDutyLimit - onDutyThisDay;
-                 remainingHours += (drivableHours - drivingThisDay);
-                 daySchedule.driving = drivingThisDay;
-                 daySchedule.onDuty = onDutyThisDay;
-            } else {
-                 daySchedule.driving = drivingThisDay;
-                 daySchedule.onDuty = onDutyThisDay;
+            
+            daySchedule.onDuty = onDutyTime;
+            
+            // Re-adjust driving if we exceed 14 hours on duty
+            if (daySchedule.driving + daySchedule.onDuty > 14) {
+                const excess = (daySchedule.driving + daySchedule.onDuty) - 14;
+                daySchedule.driving -= excess;
+                remainingHours += excess;
             }
-
-            const totalDailyHours = daySchedule.driving + daySchedule.onDuty;
-            daySchedule.offDuty = 24 - totalDailyHours;
-
-            // Check for sleeper berth and split-sleeper options for future implementation
-            // The current logic assumes a simple on/off duty schedule.
+            
+            // All remaining time is Off Duty (or sleeper berth, but we'll simplify)
+            daySchedule.offDuty = 24 - (daySchedule.driving + daySchedule.onDuty);
 
             schedule.push(daySchedule);
             days++;
-            // Reset cycle after 8 days
+            
+            // Check for 34 hour restart or 8-day cycle reset
+            // This is a simplified model. A real one would track previous 8 days.
             if ((days - 1) % 8 === 0) {
                  remainingCycle = 70;
             }
@@ -254,6 +269,11 @@ const App = () => {
         e.preventDefault();
         if (!db || !userId) {
             setMessage("Authentication is not ready. Please wait.");
+            setMessageType('error');
+            return;
+        }
+        if (!profileData.driverName || !profileData.vehicleNumber) {
+            setMessage("Please fill out your driver profile first.");
             setMessageType('error');
             return;
         }
@@ -296,7 +316,7 @@ const App = () => {
             const distanceMiles = (distanceMeters * 0.000621371).toFixed(2);
             const totalDrivingHours = (durationSeconds / 3600).toFixed(2);
 
-            const totalHours = parseFloat(totalDrivingHours) + 2; // 1 hr pickup, 1 hr dropoff
+            const totalHours = parseFloat(totalDrivingHours);
             const schedule = calculateTripSchedule(totalHours, formData.cycleUsed);
 
             const newTrip = {
@@ -306,6 +326,7 @@ const App = () => {
                 totalHours: totalHours.toFixed(2),
                 logSchedule: schedule,
                 route: route.geometry,
+                profile: profileData,
                 createdAt: new Date()
             };
 
@@ -318,6 +339,29 @@ const App = () => {
             setMessage("An error occurred. Please try again.");
             setMessageType('error');
             console.error("Error during trip planning:", error);
+            setIsLoading(false);
+        }
+    };
+
+    // --- Profile Saving Logic ---
+    const handleProfileSave = async (e) => {
+        e.preventDefault();
+        if (!db || !userId) {
+            setMessage("Authentication is not ready. Please wait.");
+            setMessageType('error');
+            return;
+        }
+        setIsLoading(true);
+        try {
+            const profileDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/profile/userProfile`);
+            await setDoc(profileDocRef, profileData);
+            setMessage("Profile saved successfully!");
+            setMessageType('success');
+        } catch (error) {
+            setMessage("Failed to save profile. Please try again.");
+            setMessageType('error');
+            console.error("Error saving profile:", error);
+        } finally {
             setIsLoading(false);
         }
     };
@@ -338,15 +382,24 @@ const App = () => {
         const hourMarkerInterval = logWidth / 24;
         const statusHeight = logHeight / 4;
 
+        // Draw header
+        ctx.font = '14px Inter, sans-serif';
+        ctx.fillStyle = '#1f2937';
+        ctx.textAlign = 'left';
+        ctx.fillText(`Driver: ${trip.profile?.driverName || 'N/A'}`, margin, 20);
+        ctx.fillText(`Vehicle: ${trip.profile?.vehicleNumber || 'N/A'}`, margin, 40);
+        ctx.fillText(`Home Terminal: ${trip.profile?.homeTerminal || 'N/A'}`, margin, 60);
+        ctx.fillText(`Log Date: Day ${dayIndex + 1}`, margin + 200, 20);
+
         // Draw hour markers
         ctx.fillStyle = '#555';
         ctx.font = '10px Inter, sans-serif';
         ctx.textAlign = 'center';
         for (let i = 0; i <= 24; i++) {
             const x = margin + i * hourMarkerInterval;
-            ctx.moveTo(x, margin);
+            ctx.moveTo(x, margin + 80);
             ctx.lineTo(x, canvas.height - margin);
-            ctx.fillText(i, x, margin - 5);
+            ctx.fillText(i, x, margin + 70);
         }
 
         // Draw status lines
@@ -354,7 +407,7 @@ const App = () => {
         ctx.textAlign = 'left';
         ctx.font = '12px Inter, sans-serif';
         statuses.forEach((status, index) => {
-            const y = margin + index * statusHeight;
+            const y = margin + 80 + index * statusHeight;
             ctx.fillText(status, margin + 5, y + statusHeight / 2 + 5);
         });
 
@@ -364,32 +417,25 @@ const App = () => {
         ctx.strokeStyle = '#3b82f6';
         let currentTime = 0;
 
-        // Off Duty (initial state)
-        const offDutyStart = currentTime;
-        const offDutyEnd = offDutyStart + (schedule.offDuty || 0);
-        ctx.moveTo(margin + (offDutyStart * hourMarkerInterval), margin + 0.5 * statusHeight);
-        ctx.lineTo(margin + (offDutyEnd * hourMarkerInterval), margin + 0.5 * statusHeight);
-        currentTime = offDutyEnd;
+        // Draw Off Duty
+        ctx.moveTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 0.5 * statusHeight);
+        currentTime += schedule.offDuty || 0;
+        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 0.5 * statusHeight);
 
-        // Sleeper Berth (if applicable)
-        const sleeperStart = currentTime;
-        const sleeperEnd = sleeperStart + (schedule.sleeper || 0);
-        ctx.lineTo(margin + (sleeperStart * hourMarkerInterval), margin + 1.5 * statusHeight);
-        ctx.lineTo(margin + (sleeperEnd * hourMarkerInterval), margin + 1.5 * statusHeight);
-        currentTime = sleeperEnd;
-
-        // Driving
-        const drivingStart = currentTime;
-        const drivingEnd = drivingStart + (schedule.driving || 0);
-        ctx.lineTo(margin + (drivingStart * hourMarkerInterval), margin + 2.5 * statusHeight);
-        ctx.lineTo(margin + (drivingEnd * hourMarkerInterval), margin + 2.5 * statusHeight);
-        currentTime = drivingEnd;
-
-        // On Duty
-        const onDutyStart = currentTime;
-        const onDutyEnd = onDutyStart + (schedule.onDuty || 0);
-        ctx.lineTo(margin + (onDutyStart * hourMarkerInterval), margin + 3.5 * statusHeight);
-        ctx.lineTo(margin + (onDutyEnd * hourMarkerInterval), margin + 3.5 * statusHeight);
+        // Draw Sleeper Berth
+        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 1.5 * statusHeight);
+        currentTime += schedule.sleeper || 0;
+        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 1.5 * statusHeight);
+        
+        // Draw Driving
+        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 2.5 * statusHeight);
+        currentTime += schedule.driving || 0;
+        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 2.5 * statusHeight);
+        
+        // Draw On Duty
+        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 3.5 * statusHeight);
+        currentTime += schedule.onDuty || 0;
+        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 3.5 * statusHeight);
 
         ctx.stroke();
     }, []);
@@ -499,6 +545,76 @@ const App = () => {
                         </div>
                     </div>
                 );
+            case 'profile':
+                return (
+                    <div className="flex flex-col lg:flex-row lg:space-x-6">
+                        <div className="w-full p-4 bg-gray-50 rounded-lg border shadow-sm">
+                            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center space-x-2">
+                                <User className="w-5 h-5 text-indigo-600" />
+                                <span>Driver Profile</span>
+                            </h2>
+                            {profileIsLoading ? (
+                                <div className="flex items-center justify-center p-8 text-gray-500">
+                                    <Loader className="animate-spin h-6 w-6 mr-3" />
+                                    Loading profile...
+                                </div>
+                            ) : (
+                                <form onSubmit={handleProfileSave} className="space-y-4 max-w-lg mx-auto">
+                                    <div>
+                                        <label htmlFor="driverName" className="block text-sm font-medium text-gray-700">Driver Name</label>
+                                        <input
+                                            type="text"
+                                            id="driverName"
+                                            name="driverName"
+                                            value={profileData.driverName}
+                                            onChange={(e) => setProfileData(prev => ({ ...prev, driverName: e.target.value }))}
+                                            placeholder="Your Name"
+                                            required
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="vehicleNumber" className="block text-sm font-medium text-gray-700">Vehicle Number</label>
+                                        <input
+                                            type="text"
+                                            id="vehicleNumber"
+                                            name="vehicleNumber"
+                                            value={profileData.vehicleNumber}
+                                            onChange={(e) => setProfileData(prev => ({ ...prev, vehicleNumber: e.target.value }))}
+                                            placeholder="Truck ID or License Plate"
+                                            required
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="homeTerminal" className="block text-sm font-medium text-gray-700">Home Terminal Address</label>
+                                        <input
+                                            type="text"
+                                            id="homeTerminal"
+                                            name="homeTerminal"
+                                            value={profileData.homeTerminal}
+                                            onChange={(e) => setProfileData(prev => ({ ...prev, homeTerminal: e.target.value }))}
+                                            placeholder="E.g., 123 Trucking Lane, Dallas, TX"
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                        />
+                                    </div>
+                                    <button
+                                        type="submit"
+                                        disabled={isLoading}
+                                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                                    >
+                                        {isLoading ? (
+                                            <>
+                                                <Loader className="animate-spin -ml-1 mr-3 h-5 w-5" />
+                                                Saving...
+                                            </>
+                                        ) : 'Save Profile'}
+                                    </button>
+                                </form>
+                            )}
+                        </div>
+                    </div>
+                );
             case 'logs':
                 return (
                     <div className="flex flex-col lg:flex-row lg:space-x-6">
@@ -529,7 +645,7 @@ const App = () => {
                         </div>
                         <div className="lg:w-2/3 p-4 bg-gray-50 rounded-lg border shadow-sm">
                             <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center space-x-2">
-                                <TrendingUp className="w-5 h-5 text-indigo-600" />
+                                <BookA className="w-5 h-5 text-indigo-600" />
                                 <span>ELD Log Sheet</span>
                             </h2>
                             {selectedTrip ? (
@@ -664,6 +780,15 @@ const App = () => {
                         >
                             <TrendingUp className="h-5 w-5" />
                             <span className="font-medium">Reports</span>
+                        </button>
+                    </li>
+                    <li>
+                        <button
+                            onClick={() => setActiveTab('profile')}
+                            className={`flex items-center space-x-2 px-4 py-2 rounded-full transition-colors duration-200 ${activeTab === 'profile' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'}`}
+                        >
+                            <User className="h-5 w-5" />
+                            <span className="font-medium">Profile</span>
                         </button>
                     </li>
                 </ul>
