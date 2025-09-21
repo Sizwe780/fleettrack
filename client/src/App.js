@@ -381,9 +381,10 @@ const App = () => {
     const logSheets = [];
     let currentDayLog = [];
     let currentTimeMinutes = 0;
-    let dayCount = 1;
+    let dailyDrivingMinutes = 0;
+    let breakTakenToday = false;
 
-    // Add pickup location time
+    // Add pickup time
     currentDayLog.push({
       status: 'On Duty',
       event: 'Pickup',
@@ -393,72 +394,89 @@ const App = () => {
     currentTimeMinutes += ON_DUTY_PICKUP_DROPOFF_MINUTES;
 
     while (remainingDrivingMinutes > 0) {
-      const dailyDrivingMinutes = Math.min(remainingDrivingMinutes, DAILY_DRIVING_LIMIT);
-      let drivingSegmentMinutes = 0;
+      // Check for daily limits and end the day if needed
+      if (dailyDrivingMinutes >= DAILY_DRIVING_LIMIT || currentTimeMinutes >= DAILY_ON_DUTY_LIMIT) {
+          currentDayLog.push({
+              status: 'Sleeper',
+              event: 'Sleeper Berth',
+              startTime: currentTimeMinutes,
+              endTime: 24 * 60,
+          });
+          logSheets.push(currentDayLog);
+          currentDayLog = [];
+          currentTimeMinutes = 0;
+          dailyDrivingMinutes = 0;
+          breakTakenToday = false;
+          continue;
+      }
 
-      while (drivingSegmentMinutes < dailyDrivingMinutes) {
-        let segmentDuration = Math.min(DAILY_DRIVING_LIMIT - drivingSegmentMinutes, 8 * 60);
-
-        // Check for 30-min break
-        if (drivingSegmentMinutes >= 8 * 60) {
-           segmentDuration = Math.min(DAILY_DRIVING_LIMIT - drivingSegmentMinutes, 8 * 60);
-           currentDayLog.push({
+      // Check for 30-min break
+      if (dailyDrivingMinutes >= 8 * 60 && !breakTakenToday) {
+          currentDayLog.push({
               status: 'Off Duty',
               event: 'Break',
               startTime: currentTimeMinutes,
               endTime: currentTimeMinutes + OFF_DUTY_BREAK_MINUTES,
-           });
-           currentTimeMinutes += OFF_DUTY_BREAK_MINUTES;
-        }
+          });
+          currentTimeMinutes += OFF_DUTY_BREAK_MINUTES;
+          breakTakenToday = true;
+      }
 
-        currentDayLog.push({
-          status: 'Driving',
-          event: 'En Route',
-          startTime: currentTimeMinutes,
-          endTime: currentTimeMinutes + segmentDuration,
-        });
-
-        currentTimeMinutes += segmentDuration;
-        drivingSegmentMinutes += segmentDuration;
-        remainingDrivingMinutes -= segmentDuration;
-        distanceDriven += (segmentDuration / 60) * AVG_SPEED;
-
-        // Check for fuel stop
-        if (distanceDriven >= FUEL_STOP_DISTANCE) {
-            currentDayLog.push({
+      // Check for fuel stop
+      if (distanceDriven >= FUEL_STOP_DISTANCE) {
+          currentDayLog.push({
               status: 'On Duty',
               event: 'Fuel Stop',
               startTime: currentTimeMinutes,
               endTime: currentTimeMinutes + ON_DUTY_FUEL_STOP_MINUTES,
-            });
-            currentTimeMinutes += ON_DUTY_FUEL_STOP_MINUTES;
-            distanceDriven = 0; // Reset distance for the next fuel stop
-        }
+          });
+          currentTimeMinutes += ON_DUTY_FUEL_STOP_MINUTES;
+          distanceDriven = 0;
       }
 
-      // Add sleeper berth time to fill the 24 hour day
-      currentDayLog.push({
-        status: 'Sleeper',
-        event: 'Sleeper Berth',
-        startTime: currentTimeMinutes,
-        endTime: 24 * 60,
-      });
+      // Driving segment
+      const driveMinutesForSegment = Math.min(
+          remainingDrivingMinutes,
+          DAILY_DRIVING_LIMIT - dailyDrivingMinutes,
+          DAILY_ON_DUTY_LIMIT - currentTimeMinutes
+      );
 
-      logSheets.push(currentDayLog);
-      currentDayLog = [];
-      currentTimeMinutes = 0;
-      dayCount++;
+      if (driveMinutesForSegment > 0) {
+          currentDayLog.push({
+              status: 'Driving',
+              event: 'En Route',
+              startTime: currentTimeMinutes,
+              endTime: currentTimeMinutes + driveMinutesForSegment,
+          });
+
+          currentTimeMinutes += driveMinutesForSegment;
+          dailyDrivingMinutes += driveMinutesForSegment;
+          remainingDrivingMinutes -= driveMinutesForSegment;
+          distanceDriven += (driveMinutesForSegment / 60) * AVG_SPEED;
+      } else if (remainingDrivingMinutes > 0) {
+          // If no driving time can be added but the trip isn't over, end the day
+          currentDayLog.push({
+              status: 'Sleeper',
+              event: 'Sleeper Berth',
+              startTime: currentTimeMinutes,
+              endTime: 24 * 60,
+          });
+          logSheets.push(currentDayLog);
+          currentDayLog = [];
+          currentTimeMinutes = 0;
+          dailyDrivingMinutes = 0;
+          breakTakenToday = false;
+      }
     }
 
     // Add drop-off time on the last day
-    const lastDayLog = logSheets[logSheets.length - 1];
-    lastDayLog.push({
+    currentDayLog.push({
       status: 'On Duty',
       event: 'Dropoff',
       startTime: currentTimeMinutes,
       endTime: currentTimeMinutes + ON_DUTY_PICKUP_DROPOFF_MINUTES,
     });
-    currentTimeMinutes += ON_DUTY_PICKUP_DROPOFF_MINUTES;
+    logSheets.push(currentDayLog);
 
     const tripData = {
       driverName: formData.driverName,
@@ -701,7 +719,7 @@ const App = () => {
         const totalDrivingTime = mapData?.totalDrivingTimeHours || 0;
         const totalDistance = mapData?.distance || 0;
         const numDays = mapData?.totalDays || 0;
-        const totalOnDutyTime = mapData?.logSheets?.[0]?.reduce((total, event) => total + (event.status === 'On Duty' ? (event.endTime - event.startTime) / 60 : 0), 0) || 0;
+        const totalOnDutyTime = mapData?.logSheets?.flat().reduce((total, event) => total + (event.status === 'On Duty' ? (event.endTime - event.startTime) / 60 : 0), 0) || 0;
         return (
           <div className="p-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
