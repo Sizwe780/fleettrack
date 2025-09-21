@@ -1,46 +1,28 @@
 /* global __app_id, __firebase_config, __initial_auth_token, mapboxgl, L */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote, Fuel, Bed, Database, ListChecks, TrendingUp, Info } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, addDoc, onSnapshot, collection, query, orderBy, where, getDocs, setLogLevel } from 'firebase/firestore';
 
 const App = () => {
-  // State management for UI tabs and form data
   const [activeTab, setActiveTab] = useState('home');
-  const [currentLocation, setCurrentLocation] = useState('');
-  const [formData, setFormData] = useState({
-    origin: '',
-    destination: '',
-    date: '',
-    driverName: '',
-    vehicleNumber: '',
-    cycleUsed: '',
-    departureTime: '',
-  });
-  const [message, setMessage] = useState('');
-  const [messageType, setMessageType] = useState('');
   const [mapData, setMapData] = useState(null);
   const [logData, setLogData] = useState([]);
   const [logRemarks, setLogRemarks] = useState({});
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLocating, setIsLocating] = useState(false);
-  const [locationStatus, setLocationStatus] = useState(null);
-
-  // State for Firebase and Mapbox
   const [db, setDb] = useState(null);
   const [auth, setAuth] = useState(null);
   const [user, setUser] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isMapboxLoaded, setIsMapboxLoaded] = useState(false);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState('');
 
-  // Accessing global variables injected by the environment
   const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2U3ODAiLCJhIjoiY2x1d2R5ZGZqMGQwMTJpcXBtYXk2dW1icSJ9.9j1hS_x2n3K7x_j5l001Q';
   const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
   const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
   const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-  // Effect to initialize Firebase and authentication
   useEffect(() => {
     try {
       const app = initializeApp(firebaseConfig);
@@ -50,7 +32,7 @@ const App = () => {
       setAuth(authInstance);
       setLogLevel('debug');
 
-      onAuthStateChanged(authInstance, async (authUser) => {
+      const unsubscribe = onAuthStateChanged(authInstance, async (authUser) => {
         if (authUser) {
           setUser(authUser);
         } else {
@@ -66,12 +48,12 @@ const App = () => {
         }
         setIsAuthReady(true);
       });
+      return () => unsubscribe();
     } catch (e) {
       console.error("Firebase Initialization Error:", e);
     }
-  }, []);
+  }, [initialAuthToken, firebaseConfig]);
 
-  // Effect to load external scripts (Mapbox)
   useEffect(() => {
     const loadScripts = () => {
       const mapboxglScript = document.createElement('script');
@@ -86,87 +68,18 @@ const App = () => {
       };
       document.body.appendChild(mapboxglScript);
     };
-
     loadScripts();
   }, []);
 
-  // Handler for form input changes
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prevData => ({
-      ...prevData,
-      [name]: value,
-    }));
-  };
-
-  // Handler for remarks on log sheets
-  const handleRemarkChange = (dayIndex, value) => {
-    setLogRemarks(prevRemarks => ({
-      ...prevRemarks,
-      [dayIndex]: value
-    }));
-    setLogData(prevLogs => {
-      const newLogs = [...prevLogs];
-      newLogs[dayIndex] = { ...newLogs[dayIndex], remarks: value };
-      return newLogs;
-    });
-  };
-
-  // Handler to get the user's current location via Geolocation API
-  const handleGetCurrentLocation = () => {
-    setIsLocating(true);
-    setLocationStatus(null);
-    setMessage('');
-    if (navigator.geolocation && isMapboxLoaded) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${MAPBOX_ACCESS_TOKEN}`)
-            .then(response => response.json())
-            .then(data => {
-              const placeName = data.features?.[0]?.place_name || `Lat: ${latitude}, Lng: ${longitude}`;
-              setCurrentLocation(placeName);
-              setLocationStatus('success');
-              setIsLocating(false);
-            })
-            .catch(error => {
-              console.error('Error fetching location details:', error);
-              setCurrentLocation(`Lat: ${latitude}, Lng: ${longitude}`);
-              setLocationStatus('success');
-              setIsLocating(false);
-            });
-        },
-        (error) => {
-          console.error('Geolocation Error:', error);
-          let errorMessage = 'Failed to get location.';
-          if (error.code === error.PERMISSION_DENIED) {
-            errorMessage = 'Permission denied. Please enable location services.';
-          }
-          setMessage(errorMessage);
-          setMessageType('error');
-          setLocationStatus('error');
-          setIsLocating(false);
-        },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-      );
-    } else {
-      setMessage('Geolocation is not supported or Mapbox is not yet loaded.');
-      setMessageType('error');
-      setLocationStatus('error');
-      setIsLocating(false);
-    }
-  };
-
-  // Core logic to calculate Hours of Service (HOS) and stops
-  const calculateHOS = (totalDistanceMiles) => {
+  const calculateHOS = (totalDistanceMiles, cycleUsed) => {
     const speed = 50;
     const drivingLimit = 11;
     const onDutyLimit = 14;
     const totalCycle = 70;
-    const initialCycleUsed = parseFloat(formData.cycleUsed) || 0;
-    const pickupDropoffTime = 1; // 1 hour for pickup and dropoff
+    const initialCycleUsed = parseFloat(cycleUsed) || 0;
+    const pickupDropoffTime = 1;
     const fuelStopInterval = 1000;
-
+    
     let distanceRemaining = totalDistanceMiles;
     let cycleRemaining = totalCycle - initialCycleUsed;
     let days = 1;
@@ -178,7 +91,7 @@ const App = () => {
       const dailyDriving = Math.min(drivingLimit, distanceRemaining / speed);
       let dailyOnDuty = dailyDriving + pickupDropoffTime;
       if (dailyOnDuty > onDutyLimit) dailyOnDuty = onDutyLimit;
-
+      
       let dailyOffDuty = 24 - dailyOnDuty;
       if (dailyOffDuty < 10) dailyOffDuty = 10;
       
@@ -191,12 +104,10 @@ const App = () => {
       cycleRemaining -= dailyOnDuty;
       cumulativeDistance += distanceToday;
 
-      // Add a fuel stop if the cumulative distance since the last fuel stop is over 1000 miles
       if (Math.floor(cumulativeDistance / fuelStopInterval) > stops.filter(s => s.type === 'fuel').length) {
           stops.push({ name: `Fuel Stop`, type: 'fuel', day: days });
       }
       
-      // Add a rest stop for every 14 hours on duty
       if (dailyOnDuty >= 14) {
           stops.push({ name: `Rest Stop`, type: 'rest', day: days });
       }
@@ -208,32 +119,22 @@ const App = () => {
         offDuty: dailyOffDuty.toFixed(2),
         sleeperBerth: 0,
         remarks: '',
-        date: new Date(new Date(formData.date).setDate(new Date(formData.date).getDate() + days - 1)).toISOString().slice(0, 10),
-        driverName: formData.driverName,
-        vehicleNumber: formData.vehicleNumber,
+        date: new Date(new Date().setDate(new Date().getDate() + days - 1)).toISOString().slice(0, 10),
       };
       logs.push(log);
       days++;
     }
-
+    
     return { logs, stops, totalDrivingHours: (totalDistanceMiles / speed).toFixed(2), totalDistanceMiles: totalDistanceMiles.toFixed(2), totalDays: days - 1 };
   };
 
-  // Form submission handler
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setMessage('');
-    setMessageType('');
-    setIsLoading(true);
-
+  const handleTripSubmitted = async (formData) => {
     if (!isAuthReady || !user || !isMapboxLoaded) {
       setMessage('Application not ready. Please wait a moment and try again.');
       setMessageType('error');
-      setIsLoading(false);
       return;
     }
 
-    // Geocoding function to get coordinates from an address
     const geocode = async (location) => {
       const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(location)}.json?access_token=${MAPBOX_ACCESS_TOKEN}`);
       const data = await response.json();
@@ -257,7 +158,7 @@ const App = () => {
         const route = routeData.routes[0];
         const totalDistanceMiles = route.distance / 1609.34;
         
-        const { logs, stops, totalDrivingHours, totalDistanceMiles: finalDistance, totalDays } = calculateHOS(totalDistanceMiles);
+        const { logs, stops, totalDrivingHours, totalDistanceMiles: finalDistance, totalDays } = calculateHOS(totalDistanceMiles, formData.cycleUsed);
 
         const newMapData = {
           routePolyline: route.geometry,
@@ -293,12 +194,262 @@ const App = () => {
       console.error('Trip planning failed:', error);
       setMessage(`Failed to plan trip: ${error.message}`);
       setMessageType('error');
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  // Component for displaying the Map
+  const handleRemarkChange = (dayIndex, value) => {
+    setLogRemarks(prevRemarks => ({
+      ...prevRemarks,
+      [dayIndex]: value
+    }));
+    setLogData(prevLogs => {
+      const newLogs = [...prevLogs];
+      newLogs[dayIndex] = { ...newLogs[dayIndex], remarks: value };
+      return newLogs;
+    });
+  };
+
+  const TripForm = ({ onTripSubmitted, isMapboxLoaded }) => {
+    const [formData, setFormData] = useState({
+      origin: '',
+      destination: '',
+      date: '',
+      driverName: '',
+      vehicleNumber: '',
+      cycleUsed: '',
+      departureTime: '',
+    });
+    const [message, setMessage] = useState('');
+    const [messageType, setMessageType] = useState('');
+    const [isLocating, setIsLocating] = useState(false);
+    const [locationStatus, setLocationStatus] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [currentLocation, setCurrentLocation] = useState('');
+
+    const handleInputChange = (e) => {
+      const { name, value } = e.target;
+      setFormData(prevData => ({
+        ...prevData,
+        [name]: value,
+      }));
+    };
+
+    const handleGetCurrentLocation = () => {
+      setIsLocating(true);
+      setLocationStatus(null);
+      setMessage('');
+      if (navigator.geolocation && isMapboxLoaded) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude } = position.coords;
+            fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${MAPBOX_ACCESS_TOKEN}`)
+              .then(response => response.json())
+              .then(data => {
+                const placeName = data.features?.[0]?.place_name || `Lat: ${latitude}, Lng: ${longitude}`;
+                setCurrentLocation(placeName);
+                setFormData(prevData => ({ ...prevData, origin: placeName }));
+                setLocationStatus('success');
+                setIsLocating(false);
+              })
+              .catch(error => {
+                console.error('Error fetching location details:', error);
+                setCurrentLocation(`Lat: ${latitude}, Lng: ${longitude}`);
+                setFormData(prevData => ({ ...prevData, origin: `Lat: ${latitude}, Lng: ${longitude}` }));
+                setLocationStatus('success');
+                setIsLocating(false);
+              });
+          },
+          (error) => {
+            console.error('Geolocation Error:', error);
+            let errorMessage = 'Failed to get location.';
+            if (error.code === error.PERMISSION_DENIED) {
+              errorMessage = 'Permission denied. Please enable location services.';
+            }
+            setMessage(errorMessage);
+            setMessageType('error');
+            setLocationStatus('error');
+            setIsLocating(false);
+          },
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
+      } else {
+        setMessage('Geolocation is not supported or Mapbox is not yet loaded.');
+        setMessageType('error');
+        setLocationStatus('error');
+        setIsLocating(false);
+      }
+    };
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      setMessage('');
+      setMessageType('');
+      setIsLoading(true);
+      try {
+        await onTripSubmitted(formData);
+        setMessage('Trip planned and saved successfully! Check the Map and Logs tabs.');
+        setMessageType('success');
+      } catch (error) {
+        setMessage(`Failed to plan trip: ${error.message}`);
+        setMessageType('error');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    return (
+      <div className="flex flex-col items-center justify-center min-h-full px-4">
+        <div className="max-w-7xl w-full mx-auto bg-white rounded-2xl shadow-xl p-8">
+          <h1 className="text-3xl md:text-4xl font-extrabold text-center text-gray-900 mb-4">
+            Plan a New Trip
+          </h1>
+          <p className="text-center text-gray-600 mb-8 text-base">
+            Enter the details below to begin your journey.
+          </p>
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+            <div className="md:col-span-2 flex flex-col items-center justify-center gap-4">
+              <div className="flex items-center gap-4">
+                <label className="text-base font-semibold text-gray-700 flex items-center gap-2">
+                  <MapPin size={20} /> Current Location
+                </label>
+                <button
+                  type="button"
+                  onClick={handleGetCurrentLocation}
+                  disabled={isLocating}
+                  className={`
+                    w-8 h-8 rounded-full flex items-center justify-center text-white transition-colors duration-300
+                    ${isLocating ? 'bg-indigo-400' :
+                      locationStatus === 'success' ? 'bg-green-500' :
+                      locationStatus === 'error' ? 'bg-red-500' :
+                      'bg-gray-400 hover:bg-indigo-500'
+                    }
+                  `}
+                >
+                  {isLocating ? (
+                    <Loader size={20} className="animate-spin" />
+                  ) : locationStatus === 'success' ? (
+                    <CheckCircle size={20} />
+                  ) : locationStatus === 'error' ? (
+                    <XCircle size={20} />
+                  ) : (
+                    <Locate size={20} />
+                  )}
+                </button>
+              </div>
+              {currentLocation && <span className="text-base font-medium text-indigo-600 text-center">{currentLocation}</span>}
+            </div>
+            <div className="flex flex-col">
+              <label htmlFor="origin" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                <MapPin size={16} /> Origin
+              </label>
+              <input
+                type="text"
+                id="origin"
+                name="origin"
+                value={formData.origin}
+                onChange={handleInputChange}
+                required
+                className="p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="e.g., New York, NY"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label htmlFor="destination" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                <MapPin size={16} /> Destination
+              </label>
+              <input
+                type="text"
+                id="destination"
+                name="destination"
+                value={formData.destination}
+                onChange={handleInputChange}
+                required
+                className="p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="e.g., Los Angeles, CA"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label htmlFor="driverName" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                <User size={16} /> Driver Name
+              </label>
+              <input
+                type="text"
+                id="driverName"
+                name="driverName"
+                value={formData.driverName}
+                onChange={handleInputChange}
+                required
+                className="p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="John Doe"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label htmlFor="vehicleNumber" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                <Truck size={16} /> Vehicle #
+              </label>
+              <input
+                type="text"
+                id="vehicleNumber"
+                name="vehicleNumber"
+                value={formData.vehicleNumber}
+                onChange={handleInputChange}
+                required
+                className="p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="TRK-12345"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label htmlFor="date" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                <Calendar size={16} /> Departure Date
+              </label>
+              <input
+                type="date"
+                id="date"
+                name="date"
+                value={formData.date}
+                onChange={handleInputChange}
+                required
+                className="p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label htmlFor="cycleUsed" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                <Clock size={16} /> Current Cycle Used (hrs)
+              </label>
+              <input
+                type="number"
+                id="cycleUsed"
+                name="cycleUsed"
+                value={formData.cycleUsed}
+                onChange={handleInputChange}
+                min="0"
+                max="70"
+                required
+                className="p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="e.g., 25"
+              />
+            </div>
+            <div className="md:col-span-2 flex justify-center mt-6">
+              <button
+                type="submit"
+                className="w-full sm:w-auto px-8 py-4 bg-indigo-600 text-white font-semibold rounded-full shadow-lg hover:bg-indigo-700 transition-colors duration-300 flex items-center justify-center gap-2"
+                disabled={isLoading || !isMapboxLoaded}
+              >
+                {isLoading ? <Loader size={20} className="animate-spin" /> : <Truck size={20} />}
+                {isLoading ? 'Planning Trip...' : 'Plan Trip'}
+              </button>
+            </div>
+          </form>
+          {message && (
+            <div className={`mt-6 text-center text-sm font-medium p-4 rounded-xl ${messageType === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+              {message}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+  
   const TripMap = () => {
     const mapContainer = useRef(null);
     const map = useRef(null);
@@ -393,9 +544,7 @@ const App = () => {
     return <div ref={mapContainer} className="h-[600px] w-full rounded-2xl shadow-xl" />;
   };
 
-  // Component for displaying and printing ELD logs
   const ELDLogSheet = () => {
-    // Function to handle printing the canvas logs
     const handlePrint = () => {
       const printWindow = window.open('', '_blank');
       printWindow.document.write(`
@@ -468,7 +617,6 @@ const App = () => {
       printWindow.print();
     };
     
-    // Effect to draw logs on canvas whenever logData changes
     useEffect(() => {
       if (logData && logData.length > 0) {
         logData.forEach((log, index) => {
@@ -480,7 +628,6 @@ const App = () => {
       }
     }, [logData, logRemarks]);
   
-    // Function to draw the HOS chart on a canvas
     const drawLogSheet = (canvas, log) => {
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
@@ -563,10 +710,10 @@ const App = () => {
         currentHour += hours;
       };
 
-      plotStatusLine('Off Duty', log.offDuty, '#22c55e');
-      plotStatusLine('Sleeper Berth', log.sleeperBerth, '#a855f7');
-      plotStatusLine('Driving', log.driving, '#3b82f6');
-      plotStatusLine('On Duty', log.onDuty, '#eab308');
+      plotStatusLine('Off Duty', parseFloat(log.offDuty), '#22c55e');
+      plotStatusLine('Sleeper Berth', parseFloat(log.sleeperBerth), '#a855f7');
+      plotStatusLine('Driving', parseFloat(log.driving), '#3b82f6');
+      plotStatusLine('On Duty', parseFloat(log.onDuty), '#eab308');
     };
   
     if (!logData || logData.length === 0) {
@@ -600,7 +747,7 @@ const App = () => {
                 <textarea
                   className="w-full p-2 text-sm text-gray-800 border-none bg-transparent focus:ring-0 focus:border-0 resize-none"
                   rows="2"
-                  value={logRemarks[index]}
+                  value={logRemarks[index] || ''}
                   onChange={(e) => handleRemarkChange(index, e.target.value)}
                   placeholder="Add your remarks here..."
                 ></textarea>
@@ -622,12 +769,10 @@ const App = () => {
     );
   };
 
-  // Component for displaying trip reports from Firestore
   const Reports = () => {
     const [trips, setTrips] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    // Effect to fetch trip data from Firestore in real-time
     useEffect(() => {
       if (!isAuthReady || !user || !db) return;
       setLoading(true);
@@ -649,7 +794,6 @@ const App = () => {
       return () => unsubscribe();
     }, [isAuthReady, user, db, appId]);
 
-    // Simple bar chart component for visualization
     const Chart = ({ data }) => {
       const maxMiles = Math.max(...data.map(d => parseFloat(d.totalDistanceMiles)), 0) || 1;
       const totalWidth = 600;
@@ -754,262 +898,90 @@ const App = () => {
     );
   };
   
-  // The main tab content renderer
-  const TabContent = () => {
-    switch (activeTab) {
-      case 'home':
-        return (
-          <div className="flex flex-col items-center justify-center min-h-full px-4">
-            <div className="max-w-7xl w-full mx-auto bg-white rounded-2xl shadow-xl p-8">
-              <h1 className="text-3xl md:text-4xl font-extrabold text-center text-gray-900 mb-4">
-                Plan a New Trip
-              </h1>
-              <p className="text-center text-gray-600 mb-8 text-base">
-                Enter the details below to begin your journey.
-              </p>
-              <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
-                <div className="md:col-span-2 flex flex-col items-center justify-center gap-4">
-                  <div className="flex items-center gap-4">
-                    <label className="text-base font-semibold text-gray-700 flex items-center gap-2">
-                      <MapPin size={20} /> Current Location
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleGetCurrentLocation}
-                      disabled={isLocating || !isMapboxLoaded}
-                      className={`
-                        w-8 h-8 rounded-full flex items-center justify-center text-white transition-colors duration-300
-                        ${isLocating ? 'bg-indigo-400' :
-                          locationStatus === 'success' ? 'bg-green-500' :
-                          locationStatus === 'error' ? 'bg-red-500' :
-                          'bg-gray-400 hover:bg-indigo-500'
-                        }
-                      `}
-                    >
-                      {isLocating ? (
-                        <Loader size={20} className="animate-spin" />
-                      ) : locationStatus === 'success' ? (
-                        <CheckCircle size={20} />
-                      ) : locationStatus === 'error' ? (
-                        <XCircle size={20} />
-                      ) : (
-                        <Locate size={20} />
-                      )}
-                    </button>
-                  </div>
-                  {currentLocation && <span className="text-base font-medium text-indigo-600 text-center">{currentLocation}</span>}
-                </div>
-                <div className="flex flex-col">
-                  <label htmlFor="origin" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                    <MapPin size={16} /> Origin
-                  </label>
-                  <input
-                    id="origin"
-                    name="origin"
-                    type="text"
-                    className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-                    placeholder="Enter origin city or address"
-                    value={formData.origin}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label htmlFor="destination" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                    <MapPin size={16} /> Destination
-                  </label>
-                  <input
-                    id="destination"
-                    name="destination"
-                    type="text"
-                    className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-                    placeholder="Enter destination city or address"
-                    value={formData.destination}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label htmlFor="date" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                    <Calendar size={16} /> Date
-                  </label>
-                  <input
-                    id="date"
-                    name="date"
-                    type="date"
-                    className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-                    value={formData.date}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label htmlFor="driverName" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                    <User size={16} /> Driver Name
-                  </label>
-                  <input
-                    id="driverName"
-                    name="driverName"
-                    type="text"
-                    className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-                    placeholder="Enter driver's name"
-                    value={formData.driverName}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label htmlFor="vehicleNumber" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                    <Truck size={16} /> Vehicle Number
-                  </label>
-                  <input
-                    id="vehicleNumber"
-                    name="vehicleNumber"
-                    type="text"
-                    className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-                    placeholder="e.g., ABC-123"
-                    value={formData.vehicleNumber}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label htmlFor="cycleUsed" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                    <Gauge size={16} /> Cycle Used (Hrs)
-                  </label>
-                  <input
-                    id="cycleUsed"
-                    name="cycleUsed"
-                    type="number"
-                    className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-                    placeholder="e.g., 20"
-                    value={formData.cycleUsed}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label htmlFor="departureTime" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                    <Clock size={16} /> Departure Time
-                  </label>
-                  <input
-                    id="departureTime"
-                    name="departureTime"
-                    type="time"
-                    className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-                    value={formData.departureTime}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-                <div className="md:col-span-2 flex justify-center mt-6">
-                  <button
-                    type="submit"
-                    className="w-full md:w-auto px-12 py-4 bg-indigo-600 text-white font-semibold rounded-full shadow-lg hover:bg-indigo-700 transition duration-300 transform hover:scale-105 disabled:bg-indigo-400"
-                    disabled={isLoading || !isAuthReady || !isMapboxLoaded}
-                  >
-                    {isLoading ? 'Planning Trip...' : 'Plan Trip'}
-                  </button>
-                </div>
-              </form>
-              {message && (
-                <div className={`mt-8 p-4 rounded-lg flex items-center justify-center gap-2 ${
-                  messageType === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                }`}>
-                  {messageType === 'success' ? <CheckCircle size={20} /> : <XCircle size={20} />}
-                  <span>{message}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      case 'map':
-        return <TripMap />;
-      case 'logs':
-        return <ELDLogSheet />;
-      case 'reports':
-        return <Reports />;
-      default:
-        return null;
-    }
-  };
-
   return (
-    <div className="bg-gray-100 min-h-screen font-sans antialiased">
-      <script src="https://cdn.tailwindcss.com"></script>
-      <link href="https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.css" rel="stylesheet" />
-      <header className="bg-white shadow-sm py-4 px-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Truck className="text-indigo-600" />
-          <span className="text-2xl font-bold text-gray-900">FleetTrack</span>
-          <Star className="text-yellow-500 w-5 h-5" fill="currentColor" />
-        </div>
-        <nav>
-          <ul className="flex items-center space-x-4">
-            <li>
+    <div className="min-h-screen bg-gray-100 font-sans text-gray-800 antialiased">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .tab-button.active {
+          background-color: white;
+          color: #4338ca;
+          font-weight: 600;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+          border-radius: 9999px;
+          border-bottom: 2px solid #4338ca;
+          transform: translateY(-2px);
+        }
+        .tab-button {
+          transition: all 0.2s ease-in-out;
+          border-bottom: 2px solid transparent;
+          border-radius: 9999px;
+        }
+        .tab-button:hover {
+          color: #4338ca;
+        }
+        .map-container {
+          position: relative;
+          width: 100%;
+          height: 600px;
+          border-radius: 1rem;
+          overflow: hidden;
+        }
+        #map {
+          height: 100%;
+          width: 100%;
+        }
+        .mapboxgl-marker.mapboxgl-marker-anchor-center {
+          z-index: 10;
+        }
+      `}</style>
+      <div className="min-h-screen flex flex-col">
+        {/* Header/Tabs */}
+        <header className="bg-white sticky top-0 z-50 shadow-md">
+          <div className="container mx-auto px-4 py-4 md:py-6 flex flex-col md:flex-row items-center justify-between">
+            <div className="flex items-center gap-4 mb-4 md:mb-0">
+              <Truck size={32} className="text-indigo-600" />
+              <h1 className="text-3xl font-extrabold text-gray-900">LogTrack</h1>
+            </div>
+            <nav className="flex items-center space-x-2 md:space-x-4">
               <button
+                className={`tab-button px-4 py-2 flex items-center gap-2 ${activeTab === 'home' ? 'active' : 'text-gray-600 hover:text-indigo-600'}`}
                 onClick={() => setActiveTab('home')}
-                className={`px-4 py-2 rounded-full transition-colors duration-200 ${
-                  activeTab === 'home'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'text-gray-600 hover:text-indigo-600'
-                }`}
               >
-                Home
+                <Star size={18} /> Home
               </button>
-            </li>
-            <li>
               <button
+                className={`tab-button px-4 py-2 flex items-center gap-2 ${activeTab === 'map' ? 'active' : 'text-gray-600 hover:text-indigo-600'}`}
                 onClick={() => setActiveTab('map')}
-                className={`px-4 py-2 rounded-full transition-colors duration-200 ${
-                  activeTab === 'map'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'text-gray-600 hover:text-indigo-600'
-                }`}
               >
-                Map
+                <MapPin size={18} /> Map
               </button>
-            </li>
-            <li>
               <button
+                className={`tab-button px-4 py-2 flex items-center gap-2 ${activeTab === 'logs' ? 'active' : 'text-gray-600 hover:text-indigo-600'}`}
                 onClick={() => setActiveTab('logs')}
-                className={`px-4 py-2 rounded-full transition-colors duration-200 ${
-                  activeTab === 'logs'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'text-gray-600 hover:text-indigo-600'
-                }`}
               >
-                Logs
+                <ListChecks size={18} /> Logs
               </button>
-            </li>
-            <li>
               <button
+                className={`tab-button px-4 py-2 flex items-center gap-2 ${activeTab === 'reports' ? 'active' : 'text-gray-600 hover:text-indigo-600'}`}
                 onClick={() => setActiveTab('reports')}
-                className={`px-4 py-2 rounded-full transition-colors duration-200 ${
-                  activeTab === 'reports'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'text-gray-600 hover:text-indigo-600'
-                }`}
               >
-                Reports
+                <TrendingUp size={18} /> Reports
               </button>
-            </li>
-          </ul>
-        </nav>
-      </header>
+            </nav>
+          </div>
+        </header>
 
-      <main className="container mx-auto py-8 px-4">
-        <TabContent />
-      </main>
-
-      <footer className="w-full text-center py-6 text-gray-500 text-sm">
-        <p>
-          Need to reach out? Contact us at{' '}
-          <a href="mailto:sizwe.ngwenya78@gmail.com" className="text-indigo-600 hover:underline">
-            sizwe.ngwenya78@gmail.com
-          </a>
-        </p>
-      </footer>
+        {/* Main Content */}
+        <main className="flex-1 container mx-auto px-4 py-8 md:py-12">
+          {activeTab === 'home' && (
+            <TripForm onTripSubmitted={handleTripSubmitted} isMapboxLoaded={isMapboxLoaded} />
+          )}
+          {activeTab === 'map' && <TripMap />}
+          {activeTab === 'logs' && <ELDLogSheet />}
+          {activeTab === 'reports' && <Reports />}
+        </main>
+      </div>
     </div>
   );
 };
