@@ -27,14 +27,48 @@ const App = () => {
     setLocationStatus(null);
     setMessage('');
 
-    setTimeout(() => {
-      const mockLocation = "123 Mock Street, Anytown, USA";
-      setCurrentLocation(mockLocation);
-      setLocationStatus('success');
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setMessage('Location found successfully!');
+          setMessageType('success');
+          
+          // Use a reverse geocoding service (like Mapbox's) to get a human-readable address
+          fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${MAPBOX_ACCESS_TOKEN}`)
+            .then(response => response.json())
+            .then(data => {
+              const placeName = data.features[0]?.place_name || `Lat: ${latitude}, Lng: ${longitude}`;
+              setCurrentLocation(placeName);
+              setLocationStatus('success');
+              setIsLocating(false);
+            })
+            .catch(error => {
+              console.error('Error fetching location details:', error);
+              setCurrentLocation(`Lat: ${latitude}, Lng: ${longitude}`);
+              setLocationStatus('success');
+              setIsLocating(false);
+            });
+        },
+        (error) => {
+          console.error('Geolocation Error:', error);
+          let errorMessage = 'Failed to get location.';
+          if (error.code === error.PERMISSION_DENIED) {
+            errorMessage = 'Permission denied. Please enable location services.';
+          }
+          setMessage(errorMessage);
+          setMessageType('error');
+          setLocationStatus('error');
+          setIsLocating(false);
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+    } else {
+      setMessage('Geolocation is not supported by your browser.');
+      setMessageType('error');
+      setLocationStatus('error');
       setIsLocating(false);
-      setMessage('Location found successfully!');
-      setMessageType('success');
-    }, 1500);
+    }
   };
 
   const handleSubmit = (e) => {
@@ -102,61 +136,66 @@ const App = () => {
     const map = useRef(null);
 
     useEffect(() => {
-      if (mapData && window.mapboxgl) {
-        if (!map.current) {
-          window.mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
-          map.current = new window.mapboxgl.Map({
-            container: mapContainer.current,
-            style: 'mapbox://styles/mapbox/streets-v11',
-            center: [-98.5833, 39.8333],
-            zoom: 3,
-          });
-
-          map.current.on('load', () => {
-            const coordinates = window.mapboxgl.GeometryUtil.decode(mapData.routePolyline);
-            
-            if (coordinates.length > 0) {
-              map.current.addSource('route', {
-                'type': 'geojson',
-                'data': {
-                  'type': 'Feature',
-                  'properties': {},
-                  'geometry': {
-                    'type': 'LineString',
-                    'coordinates': coordinates
-                  }
-                }
-              });
-              map.current.addLayer({
-                'id': 'route',
-                'type': 'line',
-                'source': 'route',
-                'layout': {
-                  'line-join': 'round',
-                  'line-cap': 'round'
-                },
-                'paint': {
-                  'line-color': '#1E40AF',
-                  'line-width': 6
-                }
-              });
-
-              const bounds = new window.mapboxgl.LngLatBounds();
-              coordinates.forEach(coord => {
-                bounds.extend(coord);
-              });
-              map.current.fitBounds(bounds, { padding: 50 });
-            }
-
-            mapData.stops.forEach(stop => {
-              new window.mapboxgl.Marker()
-                .setLngLat([stop.lng, stop.lat])
-                .setPopup(new window.mapboxgl.Popup({ offset: 25 }).setHTML(`<h3>${stop.name}</h3><p>Type: ${stop.type}</p>`))
-                .addTo(map.current);
-            });
-          });
-        }
+      if (!mapData || !window.mapboxgl || !mapContainer.current) {
+        return;
       }
+      
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+      }
+
+      window.mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
+      map.current = new window.mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/mapbox/streets-v11',
+        center: [-98.5833, 39.8333],
+        zoom: 3,
+      });
+
+      map.current.on('load', () => {
+        const coordinates = window.mapboxgl.GeometryUtil.decode(mapData.routePolyline);
+        
+        if (coordinates.length > 0) {
+          map.current.addSource('route', {
+            'type': 'geojson',
+            'data': {
+              'type': 'Feature',
+              'properties': {},
+              'geometry': {
+                'type': 'LineString',
+                'coordinates': coordinates
+              }
+            }
+          });
+          map.current.addLayer({
+            'id': 'route',
+            'type': 'line',
+            'source': 'route',
+            'layout': {
+              'line-join': 'round',
+              'line-cap': 'round'
+            },
+            'paint': {
+              'line-color': '#1E40AF',
+              'line-width': 6
+            }
+          });
+
+          const bounds = new window.mapboxgl.LngLatBounds();
+          coordinates.forEach(coord => {
+            bounds.extend(coord);
+          });
+          map.current.fitBounds(bounds, { padding: 50 });
+        }
+
+        mapData.stops.forEach(stop => {
+          new window.mapboxgl.Marker()
+            .setLngLat([stop.lng, stop.lat])
+            .setPopup(new window.mapboxgl.Popup({ offset: 25 }).setHTML(`<h3>${stop.name}</h3><p>Type: ${stop.type}</p>`))
+            .addTo(map.current);
+        });
+      });
       
       return () => {
         if (map.current) {
