@@ -1,4 +1,4 @@
-/* global __app_id, __firebase_config, __initial_auth_token */
+/* global __app_id, __firebase_config, __initial_auth_token, mapboxgl, L */
 import React, { useState, useEffect, useRef } from 'react';
 import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote, Fuel, Bed, Database, ListChecks, TrendingUp, Info } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
@@ -6,6 +6,7 @@ import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged }
 import { getFirestore, doc, addDoc, onSnapshot, collection } from 'firebase/firestore';
 
 const App = () => {
+  // State management for UI tabs and form data
   const [activeTab, setActiveTab] = useState('home');
   const [currentLocation, setCurrentLocation] = useState('');
   const [formData, setFormData] = useState({
@@ -25,17 +26,21 @@ const App = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [locationStatus, setLocationStatus] = useState(null);
+
+  // State for Firebase and Mapbox
   const [db, setDb] = useState(null);
   const [auth, setAuth] = useState(null);
   const [user, setUser] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isMapboxLoaded, setIsMapboxLoaded] = useState(false);
 
+  // Accessing global variables injected by the environment
   const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2U3ODAiLCJhIjoiY2x1d2R5ZGZqMGQwMTJpcXBtYXk2dW1icSJ9.9j1hS_x2n3K7x_j5l001Q';
   const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
   const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
   const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
+  // Effect to initialize Firebase and authentication
   useEffect(() => {
     try {
       const app = initializeApp(firebaseConfig);
@@ -65,6 +70,7 @@ const App = () => {
     }
   }, []);
 
+  // Effect to load external scripts (Mapbox)
   useEffect(() => {
     const loadScripts = () => {
       const mapboxglScript = document.createElement('script');
@@ -83,6 +89,7 @@ const App = () => {
     loadScripts();
   }, []);
 
+  // Handler for form input changes
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prevData => ({
@@ -91,6 +98,7 @@ const App = () => {
     }));
   };
 
+  // Handler for remarks on log sheets
   const handleRemarkChange = (dayIndex, value) => {
     setLogRemarks(prevRemarks => ({
       ...prevRemarks,
@@ -103,6 +111,7 @@ const App = () => {
     });
   };
 
+  // Handler to get the user's current location via Geolocation API
   const handleGetCurrentLocation = () => {
     setIsLocating(true);
     setLocationStatus(null);
@@ -147,6 +156,7 @@ const App = () => {
     }
   };
 
+  // Core logic to calculate Hours of Service (HOS) and stops
   const calculateHOS = (totalDistanceMiles) => {
     const speed = 50;
     const totalDrivingHours = totalDistanceMiles / speed;
@@ -208,6 +218,7 @@ const App = () => {
     return { logs, stops, totalDrivingHours, totalDistanceMiles, days };
   };
 
+  // Form submission handler
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage('');
@@ -221,6 +232,7 @@ const App = () => {
       return;
     }
 
+    // Geocoding function to get coordinates from an address
     const geocode = async (location) => {
       const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(location)}.json?access_token=${MAPBOX_ACCESS_TOKEN}`);
       const data = await response.json();
@@ -262,6 +274,7 @@ const App = () => {
           totalDrivingHours: totalDrivingHours.toFixed(2),
           totalDays: days - 1,
           timestamp: new Date().toISOString(),
+          userId: user.uid,
         };
 
         const tripsCollectionRef = collection(db, 'artifacts', appId, 'users', user.uid, 'trips');
@@ -282,6 +295,7 @@ const App = () => {
     }
   };
 
+  // Component for displaying the Map
   const TripMap = () => {
     const mapContainer = useRef(null);
     const map = useRef(null);
@@ -376,7 +390,9 @@ const App = () => {
     return <div ref={mapContainer} className="h-[600px] w-full rounded-2xl shadow-xl" />;
   };
 
+  // Component for displaying and printing ELD logs
   const ELDLogSheet = () => {
+    // Function to handle printing the canvas logs
     const handlePrint = () => {
       const printWindow = window.open('', '_blank');
       printWindow.document.write(`
@@ -449,6 +465,7 @@ const App = () => {
       printWindow.print();
     };
     
+    // Effect to draw logs on canvas whenever logData changes
     useEffect(() => {
       if (logData && logData.length > 0) {
         logData.forEach((log, index) => {
@@ -460,6 +477,7 @@ const App = () => {
       }
     }, [logData, logRemarks]);
   
+    // Function to draw the HOS chart on a canvas
     const drawLogSheet = (canvas, log) => {
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
@@ -601,10 +619,12 @@ const App = () => {
     );
   };
 
+  // Component for displaying trip reports from Firestore
   const Reports = () => {
     const [trips, setTrips] = useState([]);
     const [loading, setLoading] = useState(true);
 
+    // Effect to fetch trip data from Firestore in real-time
     useEffect(() => {
       if (!isAuthReady || !user || !db) return;
       setLoading(true);
@@ -626,6 +646,7 @@ const App = () => {
       return () => unsubscribe();
     }, [isAuthReady, user, db, appId]);
 
+    // Simple bar chart component for visualization
     const Chart = ({ data }) => {
       const maxMiles = Math.max(...data.map(d => parseFloat(d.totalDistanceMiles)), 0) || 1;
       const totalWidth = 600;
@@ -730,7 +751,7 @@ const App = () => {
     );
   };
   
-
+  // The main tab content renderer
   const TabContent = () => {
     switch (activeTab) {
       case 'home':
