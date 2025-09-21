@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "http-proxy-middleware": "^3.0.5"
+    "http-proxy-middleware": "^3.0.5",
+    "mapbox-gl": "^3.15.0"
   }
 }
