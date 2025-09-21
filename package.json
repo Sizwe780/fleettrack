@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "http-proxy-middleware": "^3.0.5",
+    "lucide-react": "^0.544.0",
     "mapbox-gl": "^3.15.0"
   }
 }
