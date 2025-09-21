@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer } from 'lucide-react';
+import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote } from 'lucide-react';
 import { createRoot } from 'react-dom/client';
 
 const App = () => {
@@ -27,7 +27,6 @@ const App = () => {
     setLocationStatus(null);
     setMessage('');
 
-    // Mock geolocation data to ensure functionality
     setTimeout(() => {
       const mockLocation = "123 Mock Street, Anytown, USA";
       setCurrentLocation(mockLocation);
@@ -44,14 +43,13 @@ const App = () => {
     setMessageType('');
     setIsLoading(true);
 
-    // Mock HOS data generation based on assumptions
     const generateMockLogs = (startCycleHrs) => {
       const logs = [];
-      let totalOnDuty = startCycleHrs;
+      let totalOnDuty = Number(startCycleHrs);
       let day = 1;
 
       while (totalOnDuty < 70) {
-        const drivingHrs = Math.min(11, 70 - totalOnDuty - 2); // Drive up to 11 hrs, leave room for on-duty
+        const drivingHrs = Math.min(11, 70 - totalOnDuty - 2);
         const onDutyHrs = Math.min(14 - drivingHrs, 70 - totalOnDuty - drivingHrs);
         const offDutyHrs = Math.max(10, 24 - drivingHrs - onDutyHrs);
         const sleeperBerthHrs = 0;
@@ -62,7 +60,10 @@ const App = () => {
           onDuty: onDutyHrs,
           offDuty: offDutyHrs,
           sleeperBerth: sleeperBerthHrs,
-          date: `2025-01-0${day}`
+          date: new Date(new Date().setDate(new Date().getDate() + day - 1)).toISOString().slice(0, 10),
+          remarks: 'Trip started as planned.',
+          driverName: driverName,
+          vehicleNumber: vehicleNumber,
         });
         totalOnDuty += onDutyHrs;
         day++;
@@ -74,10 +75,15 @@ const App = () => {
       const mockLogs = generateMockLogs(Number(cycleUsed));
       const mockApiResponse = {
         routePolyline: 's~gpGt_l`Thk`G~{a@~naI_u`E',
+        stops: [
+          { name: 'Fuel Stop', lat: 38.8951, lng: -77.0364, type: 'fuel' },
+          { name: 'Rest Area', lat: 39.9526, lng: -75.1652, type: 'rest' },
+          { name: 'Fuel & Rest Stop', lat: 41.8781, lng: -87.6298, type: 'both' },
+        ],
         eldLogs: mockLogs,
       };
 
-      setMapData(mockApiResponse.routePolyline);
+      setMapData(mockApiResponse);
       setLogData(mockApiResponse.eldLogs);
       setMessage('Trip planned successfully! Check the Map and Logs tabs.');
       setMessageType('success');
@@ -105,70 +111,72 @@ const App = () => {
             center: [-98.5833, 39.8333],
             zoom: 3,
           });
-        }
-        
-        map.current.on('load', () => {
-          if (map.current.getSource('route')) {
-            map.current.removeLayer('route');
-            map.current.removeSource('route');
-          }
 
-          const coordinates = window.mapboxgl.GeometryUtil.decode(mapData);
-
-          if (coordinates.length > 0) {
-            map.current.addSource('route', {
-              'type': 'geojson',
-              'data': {
-                'type': 'Feature',
-                'properties': {},
-                'geometry': {
-                  'type': 'LineString',
-                  'coordinates': coordinates
+          map.current.on('load', () => {
+            const coordinates = window.mapboxgl.GeometryUtil.decode(mapData.routePolyline);
+            
+            if (coordinates.length > 0) {
+              map.current.addSource('route', {
+                'type': 'geojson',
+                'data': {
+                  'type': 'Feature',
+                  'properties': {},
+                  'geometry': {
+                    'type': 'LineString',
+                    'coordinates': coordinates
+                  }
                 }
-              }
-            });
+              });
+              map.current.addLayer({
+                'id': 'route',
+                'type': 'line',
+                'source': 'route',
+                'layout': {
+                  'line-join': 'round',
+                  'line-cap': 'round'
+                },
+                'paint': {
+                  'line-color': '#1E40AF',
+                  'line-width': 6
+                }
+              });
 
-            map.current.addLayer({
-              'id': 'route',
-              'type': 'line',
-              'source': 'route',
-              'layout': {
-                'line-join': 'round',
-                'line-cap': 'round'
-              },
-              'paint': {
-                'line-color': '#1E40AF',
-                'line-width': 6
-              }
-            });
+              const bounds = new window.mapboxgl.LngLatBounds();
+              coordinates.forEach(coord => {
+                bounds.extend(coord);
+              });
+              map.current.fitBounds(bounds, { padding: 50 });
+            }
 
-            const bounds = new window.mapboxgl.LngLatBounds();
-            coordinates.forEach(coord => {
-              bounds.extend(coord);
+            mapData.stops.forEach(stop => {
+              new window.mapboxgl.Marker()
+                .setLngLat([stop.lng, stop.lat])
+                .setPopup(new window.mapboxgl.Popup({ offset: 25 }).setHTML(`<h3>${stop.name}</h3><p>Type: ${stop.type}</p>`))
+                .addTo(map.current);
             });
-            map.current.fitBounds(bounds, { padding: 50 });
-          }
-        });
-
-        // Cleanup on component unmount
-        return () => {
-          if (map.current) {
-            map.current.remove();
-            map.current = null;
-          }
-        };
+          });
+        }
       }
+      
+      return () => {
+        if (map.current) {
+          map.current.remove();
+          map.current = null;
+        }
+      };
     }, [mapData]);
 
     if (!mapData) {
-      return <div className="p-8 text-center text-gray-500">Submit a trip to see the map!</div>;
+      return (
+        <div className="flex items-center justify-center h-96 p-8 text-center text-gray-500">
+          <p>Submit a trip to see the map with your planned route and stops.</p>
+        </div>
+      );
     }
     return <div ref={mapContainer} className="h-[600px] w-full rounded-2xl shadow-xl" />;
   };
 
   const ELDLogSheet = () => {
-    const canvasRef = useRef(null);
-  
     const handlePrint = () => {
       const printWindow = window.open('', '_blank');
       printWindow.document.write(`
@@ -178,22 +186,17 @@ const App = () => {
           <title>ELD Log Sheets</title>
           <style>
             @media print {
-              body {
-                background-color: #fff;
-              }
-              .log-sheet {
-                page-break-after: always;
-                border: 1px solid black;
-                padding: 20px;
-                margin-bottom: 20px;
-              }
-              canvas {
-                max-width: 100%;
-                height: auto;
-              }
-              .no-print {
-                display: none;
-              }
+              body { font-family: sans-serif; }
+              .log-sheet { page-break-after: always; border: 1px solid black; padding: 20px; margin-bottom: 20px; }
+              .header-info { display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 12px; }
+              .chart-container { position: relative; width: 100%; height: 150px; }
+              .grid-line { position: absolute; background-color: #e5e7eb; }
+              .vertical-line { width: 1px; height: 100%; top: 0; }
+              .horizontal-line { width: 100%; height: 1px; left: 0; }
+              .chart-labels { display: flex; justify-content: space-between; font-size: 10px; margin-top: 5px; }
+              .remarks-section { margin-top: 20px; border-top: 1px solid black; padding-top: 10px; }
+              .signature { margin-top: 30px; border-top: 1px solid black; padding-top: 5px; width: 250px; }
+              .no-print { display: none; }
             }
           </style>
         </head>
@@ -209,18 +212,33 @@ const App = () => {
         const logContainer = document.createElement('div');
         logContainer.className = 'log-sheet';
         
-        const logTitle = document.createElement('h2');
-        logTitle.style.fontSize = '20px';
-        logTitle.style.fontWeight = 'bold';
-        logTitle.style.marginBottom = '10px';
-        logTitle.textContent = `Day ${log.day}: ${log.date}`;
-        
+        const headerInfo = document.createElement('div');
+        headerInfo.className = 'header-info';
+        headerInfo.innerHTML = `
+          <div><strong>Driver:</strong> ${log.driverName}</div>
+          <div><strong>Vehicle:</strong> ${log.vehicleNumber}</div>
+          <div><strong>Date:</strong> ${log.date}</div>
+        `;
+
         const canvas = document.createElement('canvas');
         canvas.width = 800;
         canvas.height = 300;
         
-        logContainer.appendChild(logTitle);
+        const remarksSection = document.createElement('div');
+        remarksSection.className = 'remarks-section';
+        remarksSection.innerHTML = `
+          <strong>Remarks:</strong>
+          <p>${log.remarks}</p>
+        `;
+
+        const signatureSection = document.createElement('div');
+        signatureSection.className = 'signature';
+        signatureSection.innerHTML = `<strong>Driver Signature</strong>`;
+        
+        logContainer.appendChild(headerInfo);
         logContainer.appendChild(canvas);
+        logContainer.appendChild(remarksSection);
+        logContainer.appendChild(signatureSection);
         printContent.appendChild(logContainer);
         
         drawLogSheet(canvas, log);
@@ -231,7 +249,7 @@ const App = () => {
     };
     
     useEffect(() => {
-      if (canvasRef.current && logData) {
+      if (logData) {
         logData.forEach((log, index) => {
           const canvas = document.getElementById(`log-canvas-${index}`);
           if (canvas) {
@@ -242,6 +260,7 @@ const App = () => {
     }, [logData]);
   
     const drawLogSheet = (canvas, log) => {
+      if (!canvas) return;
       const ctx = canvas.getContext('2d');
       const width = canvas.width;
       const height = canvas.height;
@@ -256,11 +275,9 @@ const App = () => {
       const endY = startY + chartHeight;
       const totalHours = 24;
       
-      // Draw Grid
       ctx.strokeStyle = '#e5e7eb';
       ctx.lineWidth = 1;
       
-      // Horizontal Lines for Statuses
       const statuses = ['Off Duty', 'Sleeper Berth', 'Driving', 'On Duty'];
       for (let i = 0; i < 5; i++) {
         const y = startY + i * statusHeight;
@@ -270,7 +287,6 @@ const App = () => {
         ctx.stroke();
       }
       
-      // Vertical Lines for Hours
       for (let i = 0; i <= totalHours; i++) {
         const x = startX + (i / totalHours) * (endX - startX);
         ctx.beginPath();
@@ -279,7 +295,6 @@ const App = () => {
         ctx.stroke();
       }
       
-      // Draw Status Labels
       ctx.fillStyle = '#111827';
       ctx.font = '12px Arial';
       ctx.textAlign = 'right';
@@ -287,39 +302,16 @@ const App = () => {
         ctx.fillText(status, startX - 5, startY + (i + 0.5) * statusHeight + 5);
       });
       
-      // Draw Time Labels
       ctx.textAlign = 'center';
       for (let i = 0; i <= totalHours; i += 2) {
         const x = startX + (i / totalHours) * (endX - startX);
         ctx.fillText(i, x, endY + 15);
       }
       
-      // Draw Plot Lines based on log data
       ctx.lineWidth = 2;
       ctx.lineCap = 'round';
       
-      const drawLine = (status, hours, color) => {
-        if (hours === 0) return;
-        const yMap = {
-          'Off Duty': startY + statusHeight * 0.5,
-          'Sleeper Berth': startY + statusHeight * 1.5,
-          'Driving': startY + statusHeight * 2.5,
-          'On Duty': startY + statusHeight * 3.5,
-        };
-        const y = yMap[status];
-        const xStart = startX;
-        const xEnd = startX + (hours / totalHours) * (endX - startX);
-        
-        ctx.strokeStyle = color;
-        ctx.beginPath();
-        ctx.moveTo(xStart, y);
-        ctx.lineTo(xEnd, y);
-        ctx.stroke();
-      };
-      
       let currentHour = 0;
-      
-      // Drawing each segment based on time
       const plotStatusLine = (status, hours, color) => {
         if (hours <= 0) return;
         const yMap = {
@@ -339,10 +331,12 @@ const App = () => {
         ctx.stroke();
 
         ctx.strokeStyle = '#111827';
-        ctx.beginPath();
-        ctx.moveTo(xEnd, y);
-        ctx.lineTo(xEnd, yMap[statuses[statuses.indexOf(status) + 1]] || y);
-        ctx.stroke();
+        if (status !== 'On Duty' && (currentHour + hours) < 24) {
+          ctx.beginPath();
+          ctx.moveTo(xEnd, y);
+          ctx.lineTo(xEnd, yMap[statuses[statuses.indexOf(status) + 1]] || y);
+          ctx.stroke();
+        }
 
         currentHour += hours;
       };
@@ -351,7 +345,6 @@ const App = () => {
       plotStatusLine('Sleeper Berth', log.sleeperBerth, '#a855f7');
       plotStatusLine('Driving', log.driving, '#3b82f6');
       plotStatusLine('On Duty', log.onDuty, '#eab308');
-
     };
   
     if (!logData || logData.length === 0) {
@@ -368,14 +361,26 @@ const App = () => {
         <div className="w-full space-y-12">
           {logData.map((log, index) => (
             <div key={index} className="flex flex-col items-center border-b pb-8 last:border-b-0">
-              <h3 className="text-xl font-semibold text-gray-800 mb-6">Day {log.day}: {log.date}</h3>
+              <div className="w-full text-center mb-6">
+                <p className="text-lg font-semibold">Driver: {log.driverName}</p>
+                <p className="text-sm text-gray-600">Vehicle: {log.vehicleNumber} | Date: {log.date}</p>
+              </div>
               <canvas
                 id={`log-canvas-${index}`}
-                ref={canvasRef}
                 width="800"
                 height="250"
                 className="w-full border rounded-lg shadow-inner"
               ></canvas>
+              <div className="w-full mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2 mb-2">
+                  <StickyNote size={16} /> Remarks:
+                </h4>
+                <p className="text-gray-800 text-sm">{log.remarks}</p>
+              </div>
+              <div className="w-full mt-6 text-right">
+                <span className="text-sm text-gray-600">Driver Signature:</span>
+                <div className="w-48 h-12 inline-block border-b-2 border-gray-400 ml-2"></div>
+              </div>
             </div>
           ))}
         </div>
