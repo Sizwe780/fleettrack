@@ -1,42 +1,77 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Truck, MapPin, Star, User, Clock, Calendar, Globe, Gauge, CheckCircle, XCircle } from 'lucide-react';
+import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader } from 'lucide-react';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
+  const [currentLocation, setCurrentLocation] = useState('');
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   const [date, setDate] = useState('');
   const [driverName, setDriverName] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
-  const [currentLocation, setCurrentLocation] = useState('');
   const [cycleUsed, setCycleUsed] = useState('');
   const [departureTime, setDepartureTime] = useState('');
-  const [locationStatus, setLocationStatus] = useState('pending');
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState(''); // 'success' or 'error'
   const [mapData, setMapData] = useState(null);
   const [logData, setLogData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationStatus, setLocationStatus] = useState(null); // 'success', 'error', or null
 
-  // Request geolocation on component mount
-  useEffect(() => {
-    if (navigator.geolocation) {
+  const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2U3ODAiLCJhIjoiY2x1d2R5ZGZqMGQwMTJpcXBtYXk2dW1icSJ9.9j1hS_x2n3K7x_j5l001Q';
+
+  const handleGetCurrentLocation = async () => {
+    setIsLocating(true);
+    setLocationStatus(null);
+    setMessage('');
+
+    if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude } = pos.coords;
-          setCurrentLocation(`${latitude},${longitude}`);
-          setLocationStatus('success');
+        async (position) => {
+          try {
+            const { latitude, longitude } = position.coords;
+            const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${MAPBOX_ACCESS_TOKEN}`);
+            const data = await response.json();
+            if (data.features && data.features.length > 0) {
+              const place = data.features[0].place_name;
+              setCurrentLocation(place);
+              setLocationStatus('success');
+            } else {
+              setCurrentLocation('Unknown location');
+              setLocationStatus('error');
+              setMessage('Could not determine city from coordinates.');
+              setMessageType('error');
+            }
+          } catch (error) {
+            console.error('Error fetching location:', error);
+            setCurrentLocation('Error getting location');
+            setLocationStatus('error');
+            setMessage('Failed to get location. Please try again.');
+            setMessageType('error');
+          } finally {
+            setIsLocating(false);
+          }
         },
-        (err) => {
-          console.error('Geolocation error:', err);
+        (error) => {
+          console.error('Geolocation error:', error);
+          setCurrentLocation('Location access denied');
+          setIsLocating(false);
           setLocationStatus('error');
+          setMessage('Geolocation access denied. Please enable location services.');
+          setMessageType('error');
         }
       );
     } else {
-      setLocationStatus('unsupported');
+      setCurrentLocation('Geolocation not supported');
+      setIsLocating(false);
+      setLocationStatus('error');
+      setMessage('Geolocation is not supported by your browser.');
+      setMessageType('error');
     }
-  }, []);
+  };
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -45,11 +80,11 @@ const App = () => {
     setIsLoading(true);
 
     const tripData = {
+      currentLocation,
       origin,
       destination,
       driverName,
       vehicleNumber,
-      currentLocation,
       cycleUsed: Number(cycleUsed),
       departureTime,
     };
@@ -85,27 +120,6 @@ const App = () => {
     }
   };
 
-  const LocationIndicator = ({ status }) => {
-    const statusClasses = {
-      pending: 'bg-gray-400 animate-pulse',
-      success: 'bg-green-500',
-      error: 'bg-red-500',
-      unsupported: 'bg-yellow-500',
-    };
-    const statusText = {
-      pending: 'Finding location...',
-      success: 'Location found',
-      error: 'Location blocked',
-      unsupported: 'Geolocation not supported',
-    };
-    return (
-      <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
-        <div className={`w-3 h-3 rounded-full ${statusClasses[status]}`}></div>
-        <span>{statusText[status]}</span>
-      </div>
-    );
-  };
-
   const TripMap = () => {
     const mapContainer = useRef(null);
     const map = useRef(null);
@@ -120,7 +134,7 @@ const App = () => {
         map.current = null;
       }
 
-      window.mapboxgl.accessToken = 'pk.eyJ1Ijoic2l6d2U3ODAiLCJhIjoiY2x1d2R5ZGZqMGQwMTJpcXBtYXk2dW1icSJ9.9j1hS_x2n3K7x_j5l001Q';
+      window.mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
 
       map.current = new window.mapboxgl.Map({
         container: mapContainer.current,
@@ -246,6 +260,37 @@ const App = () => {
                 Enter the details below to begin your journey.
               </p>
               <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4">
+                <div className="flex flex-col md:col-span-2">
+                  <div className="flex items-center gap-4">
+                    <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                      <MapPin size={16} /> Location
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleGetCurrentLocation}
+                      disabled={isLocating}
+                      className={`
+                        w-6 h-6 rounded-full flex items-center justify-center text-white transition-colors duration-300
+                        ${isLocating ? 'bg-indigo-400' :
+                          locationStatus === 'success' ? 'bg-green-500' :
+                          locationStatus === 'error' ? 'bg-red-500' :
+                          'bg-gray-400 hover:bg-indigo-500'
+                        }
+                      `}
+                    >
+                      {isLocating ? (
+                        <Loader size={16} className="animate-spin" />
+                      ) : locationStatus === 'success' ? (
+                        <CheckCircle size={16} />
+                      ) : locationStatus === 'error' ? (
+                        <XCircle size={16} />
+                      ) : (
+                        <Locate size={16} />
+                      )}
+                    </button>
+                    {currentLocation && <span className="text-sm text-gray-500">{currentLocation}</span>}
+                  </div>
+                </div>
                 <div className="flex flex-col">
                   <label htmlFor="origin" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                     <MapPin size={16} /> Origin
@@ -341,19 +386,6 @@ const App = () => {
                     onChange={(e) => setDepartureTime(e.target.value)}
                     required
                   />
-                </div>
-                <div className="flex flex-col md:col-span-2">
-                  <label htmlFor="currentLocation" className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                    <Globe size={16} /> Current Location
-                  </label>
-                  <input
-                    id="currentLocation"
-                    type="text"
-                    className="p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed"
-                    value={currentLocation}
-                    readOnly
-                  />
-                  <LocationIndicator status={locationStatus} />
                 </div>
                 <div className="md:col-span-2 flex justify-center mt-6">
                   <button
