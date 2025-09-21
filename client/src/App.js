@@ -1,92 +1,56 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, orderBy } from 'firebase/firestore';
-
-// Global variables provided by the environment
-const __app_id = 'default-app-id';
-const __firebase_config = {}; // You need to replace this with your actual config
-const __initial_auth_token = null;
-
-// Your Mapbox access token.
-const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2VuZ3dlbnlhNzgiLCJhIjoiY2x1bWJ6dXh5MG4zZzJsczJ5ejQ5Y3VwYjZzIn0.niS9m5pCbK5Kv-_On2mTcg';
 
 // The main App component
 const App = () => {
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [userId, setUserId] = useState(null);
     const [trips, setTrips] = useState([]);
     const [showModal, setShowModal] = useState(false);
     const [modalMessage, setModalMessage] = useState('');
     const [isSuccess, setIsSuccess] = useState(false);
     const [selectedTrip, setSelectedTrip] = useState(null);
-    const [isAuthReady, setIsAuthReady] = useState(false);
+    const [refreshTrips, setRefreshTrips] = useState(false);
+    const [currentPage, setCurrentPage] = useState('home');
 
-    // Initialize Firebase and authenticate the user
+    // Load Mapbox GL JS and CSS from a CDN.
     useEffect(() => {
-        try {
-            if (Object.keys(__firebase_config).length > 0) {
-                const app = initializeApp(__firebase_config);
-                const firestoreDb = getFirestore(app);
-                const authService = getAuth(app);
-                setDb(firestoreDb);
-                setAuth(authService);
-                
-                const signIn = async () => {
-                    try {
-                        if (__initial_auth_token) {
-                            await signInWithCustomToken(authService, __initial_auth_token);
-                        } else {
-                            await signInAnonymously(authService);
-                        }
-                    } catch (error) {
-                        console.error("Firebase Auth error:", error);
-                    } finally {
-                        setIsAuthReady(true);
-                    }
-                };
+        const mapboxScript = document.createElement('script');
+        mapboxScript.src = 'https://api.mapbox.com/mapbox-gl-js/v2.11.0/mapbox-gl.js';
+        mapboxScript.onload = () => {
+            // Your Mapbox access token.
+            window.mapboxgl.accessToken = 'pk.eyJ1Ijoic2l6d2VuZ3dlbnlhNzgiLCJhIjoiY2x1bWJ6dXh5MG4zZzJsczJ5ejQ5Y3VwYjZzIn0.niS9m5pCbK5Kv-_On2mTcg';
+        };
 
-                onAuthStateChanged(authService, user => {
-                    if (user) {
-                        setUserId(user.uid);
-                        console.log("Authenticated user:", user.uid);
-                    } else {
-                        console.log("No user is signed in. Signing in anonymously...");
-                        signIn();
-                    }
-                });
+        const mapboxCss = document.createElement('link');
+        mapboxCss.href = 'https://api.mapbox.com/mapbox-gl-js/v2.11.0/mapbox-gl.css';
+        mapboxCss.rel = 'stylesheet';
 
-            } else {
-                console.warn("Firebase config is missing. The app will not save data.");
-                setIsAuthReady(true);
-            }
-        } catch (error) {
-            console.error("Firebase initialization failed:", error);
-            setIsAuthReady(true);
-        }
+        document.head.appendChild(mapboxCss);
+        document.body.appendChild(mapboxScript);
+
+        return () => {
+            document.head.removeChild(mapboxCss);
+            document.body.removeChild(mapboxScript);
+        };
     }, []);
 
-    // Set up the Firestore listener to get real-time trip data
+    // Set up the listener to get trip data from the Django API
     useEffect(() => {
-        if (db && userId && isAuthReady) {
-            const tripsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/trips`);
-            const q = query(tripsCollectionRef, orderBy("timestamp", "desc"));
-
-            const unsubscribe = onSnapshot(q, snapshot => {
-                const fetchedTrips = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data(),
-                }));
-                setTrips(fetchedTrips);
-            }, error => {
+        const fetchTrips = async () => {
+            try {
+                const response = await fetch('/api/trips/');
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                const data = await response.json();
+                setTrips(data);
+            } catch (error) {
                 console.error("Error fetching trips:", error);
-            });
+            }
+        };
 
-            return () => unsubscribe();
-        }
-    }, [db, userId, isAuthReady]);
+        fetchTrips();
+    }, [refreshTrips]);
 
+    // Trip Form Component
     const TripForm = () => {
         const [origin, setOrigin] = useState('');
         const [destination, setDestination] = useState('');
@@ -98,27 +62,30 @@ const App = () => {
 
         const handleSubmit = async (e) => {
             e.preventDefault();
-            if (!db || !userId) {
-                setModalMessage('Database not ready. Please try again.');
-                setIsSuccess(false);
-                setShowModal(true);
-                return;
-            }
+            const tripData = {
+                driverName,
+                origin,
+                destination,
+                date,
+                currentLocation,
+                cycleUsed: Number(cycleUsed),
+                departureTime,
+            };
+
             try {
-                const tripData = {
-                    origin,
-                    destination,
-                    date,
-                    driverName,
-                    currentLocation,
-                    cycleUsed: Number(cycleUsed),
-                    departureTime,
-                    timestamp: serverTimestamp(),
-                };
+                const response = await fetch('/api/trips/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(tripData),
+                });
 
-                const tripsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/trips`);
-                await addDoc(tripsCollectionRef, tripData);
+                if (!response.ok) {
+                    throw new Error('Failed to submit trip');
+                }
 
+                // Reset form fields
                 setOrigin('');
                 setDestination('');
                 setDate('');
@@ -130,6 +97,9 @@ const App = () => {
                 setModalMessage('Trip submitted successfully!');
                 setIsSuccess(true);
                 setShowModal(true);
+
+                // Trigger a re-fetch of the trips list
+                setRefreshTrips(prev => !prev);
             } catch (error) {
                 console.error('Submission failed:', error);
                 setModalMessage(`Failed to submit trip: ${error.message}`);
@@ -139,105 +109,102 @@ const App = () => {
         };
 
         return (
-            <div className="form-container bg-white p-10 rounded-xl shadow-lg">
-                <h2 className="text-center text-xl font-semibold mb-6 text-gray-800">Trip Log Form</h2>
+            <div className="form-container">
+                <h2 className="form-title">Trip Log Form</h2>
                 <form onSubmit={handleSubmit} className="trip-form">
-                    <div className="grid md:grid-cols-2 gap-x-8 gap-y-6">
-                        <div className="flex flex-col">
-                            <label htmlFor="origin" className="text-gray-600 font-medium mb-1">Origin</label>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label htmlFor="origin">Origin</label>
                             <input
                                 id="origin"
                                 type="text"
                                 value={origin}
                                 onChange={(e) => setOrigin(e.target.value)}
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition duration-200 ease-in-out"
                                 required
                             />
                         </div>
-                        <div className="flex flex-col">
-                            <label htmlFor="destination" className="text-gray-600 font-medium mb-1">Destination</label>
+                        <div className="form-group">
+                            <label htmlFor="destination">Destination</label>
                             <input
                                 id="destination"
                                 type="text"
                                 value={destination}
                                 onChange={(e) => setDestination(e.target.value)}
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition duration-200 ease-in-out"
                                 required
                             />
                         </div>
-                        <div className="flex flex-col">
-                            <label htmlFor="date" className="text-gray-600 font-medium mb-1">Date</label>
+                    </div>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label htmlFor="date">Date</label>
                             <input
                                 id="date"
                                 type="date"
                                 value={date}
                                 onChange={(e) => setDate(e.target.value)}
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition duration-200 ease-in-out"
                                 required
                             />
                         </div>
-                        <div className="flex flex-col">
-                            <label htmlFor="driverName" className="text-gray-600 font-medium mb-1">Driver's Name</label>
+                        <div className="form-group">
+                            <label htmlFor="driverName">Driver's Name</label>
                             <input
                                 id="driverName"
                                 type="text"
                                 value={driverName}
                                 onChange={(e) => setDriverName(e.target.value)}
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition duration-200 ease-in-out"
                                 required
                             />
                         </div>
-                        <div className="flex flex-col">
-                            <label htmlFor="cycleUsed" className="text-gray-600 font-medium mb-1">Cycle Used (Hrs)</label>
+                    </div>
+                    <div className="form-row">
+                        <div className="form-group">
+                            <label htmlFor="cycleUsed">Cycle Used (Hrs)</label>
                             <input
                                 id="cycleUsed"
                                 type="number"
                                 value={cycleUsed}
                                 onChange={(e) => setCycleUsed(e.target.value)}
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition duration-200 ease-in-out"
                                 required
                             />
                         </div>
-                        <div className="flex flex-col">
-                            <label htmlFor="departureTime" className="text-gray-600 font-medium mb-1">Departure Time</label>
+                        <div className="form-group">
+                            <label htmlFor="departureTime">Departure Time</label>
                             <input
                                 id="departureTime"
                                 type="time"
                                 value={departureTime}
                                 onChange={(e) => setDepartureTime(e.target.value)}
-                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition duration-200 ease-in-out"
                                 required
                             />
                         </div>
-                        <div className="flex flex-col md:col-span-2">
-                            <label htmlFor="currentLocation" className="text-gray-600 font-medium mb-1">Current Location</label>
-                            <div className="relative">
-                                <input
-                                    id="currentLocation"
-                                    type="text"
-                                    value={currentLocation}
-                                    onChange={(e) => setCurrentLocation(e.target.value)}
-                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition duration-200 ease-in-out pr-10"
-                                    placeholder="Enter your current location..."
-                                    required
-                                />
-                            </div>
+                    </div>
+                    <div className="form-row">
+                        <div className="form-group full-width">
+                            <label htmlFor="currentLocation">Current Location</label>
+                            <input
+                                id="currentLocation"
+                                type="text"
+                                value={currentLocation}
+                                onChange={(e) => setCurrentLocation(e.target.value)}
+                                placeholder="Enter your current location..."
+                                required
+                            />
                         </div>
                     </div>
-                    <div className="mt-8 flex justify-center">
-                        <button type="submit" className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-200 ease-in-out">Log Trip</button>
+                    <div className="form-row submit-row">
+                        <button type="submit">Log Trip</button>
                     </div>
                 </form>
             </div>
         );
     };
 
+    // ELD Log Component
     const ELDLog = ({ trip }) => {
         const canvasRef = useRef(null);
 
         useEffect(() => {
             if (!trip || !canvasRef.current) return;
-
             const canvas = canvasRef.current;
             const ctx = canvas.getContext('2d');
             const dpr = window.devicePixelRatio || 1;
@@ -301,7 +268,9 @@ const App = () => {
                     ctx.stroke();
                 });
 
-                const departureMinutes = new Date(`2000-01-01T${tripData.departureTime}`).getHours() * 60 + new Date(`2000-01-01T${tripData.departureTime}`).getMinutes();
+                const departureTimeParts = tripData.departureTime.split(':');
+                const departureHours = parseInt(departureTimeParts[0], 10);
+                const departureMinutes = (departureHours * 60) + parseInt(departureTimeParts[1], 10);
                 const drivingDuration = tripData.cycleUsed * 60;
                 const arrivalMinutes = departureMinutes + drivingDuration;
 
@@ -314,26 +283,27 @@ const App = () => {
         }, [trip]);
 
         return (
-            <div className="bg-white p-8 rounded-xl shadow-lg mt-8">
-                <h2 className="text-center text-xl font-semibold mb-6 text-gray-800">Daily ELD Log</h2>
+            <div className="log-sheet-container">
+                <h2 className="log-sheet-title">Daily ELD Log</h2>
                 {trip ? (
-                    <canvas ref={canvasRef} className="w-full h-96 border border-gray-300 rounded-lg shadow-inner"></canvas>
+                    <canvas ref={canvasRef} className="log-sheet-canvas"></canvas>
                 ) : (
-                    <p className="text-center text-gray-500 italic">Select a trip from the list to view its ELD log.</p>
+                    <p className="no-trip-message">Select a trip from the list to view its ELD log.</p>
                 )}
             </div>
         );
     };
 
+    // Map Component
     const TripMap = ({ trip }) => {
         const mapContainer = useRef(null);
         const map = useRef(null);
 
         useEffect(() => {
-            if (!trip || !window.mapboxgl || !mapContainer.current) return;
+            if (!trip || !mapContainer.current || !window.mapboxgl) return;
 
             const getCoordinates = async (place) => {
-                const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(place)}.json?access_token=${MAPBOX_ACCESS_TOKEN}`);
+                const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(place)}.json?access_token=${window.mapboxgl.accessToken}`);
                 const data = await response.json();
                 if (data.features.length > 0) {
                     const [lng, lat] = data.features[0].center;
@@ -351,7 +321,7 @@ const App = () => {
                     console.error("Could not geocode origin or destination.");
                     return;
                 }
-
+                
                 if (map.current) {
                     map.current.remove();
                 }
@@ -370,7 +340,7 @@ const App = () => {
                         new window.mapboxgl.Marker({ color: 'blue' }).setLngLat([currentCoords.lng, currentCoords.lat]).setPopup(new window.mapboxgl.Popup().setText('Current Location')).addTo(map.current);
                     }
 
-                    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords.lng},${originCoords.lat};${destinationCoords.lng},${destinationCoords.lat}?geometries=geojson&access_token=${MAPBOX_ACCESS_TOKEN}`;
+                    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${originCoords.lng},${originCoords.lat};${destinationCoords.lng},${destinationCoords.lat}?geometries=geojson&access_token=${window.mapboxgl.accessToken}`;
                     try {
                         const response = await fetch(url);
                         const data = await response.json();
@@ -424,61 +394,66 @@ const App = () => {
         }, [trip]);
 
         return (
-            <div className="bg-white p-8 rounded-xl shadow-lg mt-8">
-                <h2 className="text-center text-xl font-semibold mb-6 text-gray-800">Trip Map</h2>
+            <div className="map-container">
+                <h2 className="map-title">Trip Map</h2>
                 {trip ? (
-                    <div ref={mapContainer} className="w-full h-96 rounded-lg shadow-inner"></div>
+                    <div ref={mapContainer} className="map-canvas"></div>
                 ) : (
-                    <p className="text-center text-gray-500 italic">Select a trip from the list to view its route on the map.</p>
+                    <p className="no-trip-message">Select a trip from the list to view its route on the map.</p>
                 )}
             </div>
         );
     };
 
-    const TripList = () => {
+    // Trip List Component
+    const TripList = ({ trips, setSelectedTrip }) => {
         return (
-            <div className="mt-12 bg-white p-8 rounded-xl shadow-lg">
-                <h2 className="text-center text-xl font-semibold mb-6 text-gray-800">Your Logged Trips</h2>
+            <div className="trip-list-container">
+                <h2 className="trip-list-title">Your Logged Trips</h2>
                 {trips.length > 0 ? (
-                    <div className="grid gap-6">
+                    <div className="trip-items">
                         {trips.map(trip => (
                             <div
-                                key={trip.id}
-                                className="bg-gray-50 p-6 rounded-lg shadow-inner cursor-pointer hover:bg-gray-100 transition-colors"
-                                onClick={() => setSelectedTrip(trip)}
+                                key={trip._id}
+                                className="trip-item"
+                                onClick={() => {
+                                    setSelectedTrip(trip);
+                                    setCurrentPage('log');
+                                }}
                             >
-                                <p className="font-semibold text-lg text-indigo-700">{trip.driverName}</p>
-                                <p className="text-sm text-gray-500 mb-2">Trip ID: {trip.id}</p>
-                                <div className="grid md:grid-cols-2 gap-4 text-gray-700">
-                                    <p><strong>From:</strong> {trip.origin}</p>
-                                    <p><strong>To:</strong> {trip.destination}</p>
-                                    <p><strong>Date:</strong> {trip.date}</p>
-                                    <p><strong>Departure:</strong> {trip.departureTime}</p>
-                                    <p><strong>Current Location:</strong> {trip.currentLocation}</p>
-                                    <p><strong>Cycle Used:</strong> {trip.cycleUsed} Hrs</p>
+                                <p className="trip-driver-name">{trip.driverName}</p>
+                                <p className="trip-info">Trip ID: {trip._id}</p>
+                                <div className="trip-details">
+                                    <p>From: {trip.origin}</p>
+                                    <p>To: {trip.destination}</p>
+                                    <p>Date: {trip.date}</p>
+                                    <p>Departure: {trip.departureTime}</p>
+                                    <p>Current Location: {trip.currentLocation}</p>
+                                    <p>Cycle Used: {trip.cycleUsed} Hrs</p>
                                 </div>
                             </div>
                         ))}
                     </div>
                 ) : (
-                    <p className="text-center text-gray-500 italic">No trips logged yet.</p>
+                    <p className="no-trips-message">No trips logged yet.</p>
                 )}
             </div>
         );
     };
 
+    // Modal Component
     const Modal = ({ message, isSuccess, onClose }) => {
         return (
-            <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50">
-                <div className="bg-white p-8 rounded-lg shadow-xl max-w-sm mx-auto">
-                    <h3 className={`text-xl font-semibold mb-4 ${isSuccess ? 'text-green-600' : 'text-red-600'}`}>
+            <div className="modal-overlay">
+                <div className="modal-content">
+                    <h3 className={`modal-title ${isSuccess ? 'success' : 'error'}`}>
                         {isSuccess ? 'Success!' : 'Error'}
                     </h3>
-                    <p className="text-gray-700 mb-6">{message}</p>
-                    <div className="flex justify-end">
+                    <p className="modal-message">{message}</p>
+                    <div className="modal-actions">
                         <button
                             onClick={onClose}
-                            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                            className="modal-button"
                         >
                             Close
                         </button>
@@ -488,25 +463,46 @@ const App = () => {
         );
     };
 
-    return (
-        <div className="min-h-screen p-8 flex flex-col items-center">
-            <div className="container mx-auto max-w-4xl">
-                <h1 className="text-4xl font-extrabold text-center text-gray-800 mb-10 mt-6 tracking-tight">Fleettrack</h1>
-                <div className="bg-white p-8 rounded-xl shadow-lg mb-8">
-                    <div className="text-center text-lg text-gray-600">
-                        <span className="font-semibold text-indigo-600">Logged in as:</span> {userId || 'Authenticating...'}
-                    </div>
+    const Navbar = () => {
+        return (
+            <nav className="navbar">
+                <div className="navbar-brand" onClick={() => setCurrentPage('home')}>FleetTrack</div>
+                <div className="navbar-links">
+                    <button className={currentPage === 'home' ? 'active' : ''} onClick={() => setCurrentPage('home')}>Home</button>
+                    <button className={currentPage === 'trips' ? 'active' : ''} onClick={() => setCurrentPage('trips')}>Trips</button>
+                    <button className={currentPage === 'log' ? 'active' : ''} onClick={() => setCurrentPage('log')}>Log & Map</button>
                 </div>
-                <TripForm />
-                <TripMap trip={selectedTrip} />
-                <ELDLog trip={selectedTrip} />
-                <TripList />
-                <div className="text-center mt-12 text-gray-500 text-sm">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-1">Reach out...</h3>
-                    <p className="font-medium">sizwe.ngwenya78@gmail.com</p>
-                </div>
-            </div>
+            </nav>
+        );
+    };
 
+    const renderPage = () => {
+        switch (currentPage) {
+            case 'home':
+                return <TripForm />;
+            case 'trips':
+                return <TripList trips={trips} setSelectedTrip={setSelectedTrip} />;
+            case 'log':
+                return (
+                    <>
+                        <TripMap trip={selectedTrip} />
+                        <ELDLog trip={selectedTrip} />
+                    </>
+                );
+            default:
+                return <TripForm />;
+        }
+    };
+
+    return (
+        <div className="home-container">
+            <Navbar />
+            <h1 className="welcome-message">Welcome to FleetTrack</h1>
+            {renderPage()}
+            <div className="contact-footer">
+                <h3>Reach out... </h3>
+                sizwe.ngwenya78@gmail.com
+            </div>
             {showModal && (
                 <Modal
                     message={modalMessage}
@@ -514,6 +510,219 @@ const App = () => {
                     onClose={() => setShowModal(false)}
                 />
             )}
+            <style jsx>{`
+                body {
+                    margin: 0;
+                    padding: 0;
+                    background-color: #f5f5f5;
+                    font-family: 'Segoe UI', sans-serif;
+                }
+                .home-container {
+                    padding: 25px 2rem;
+                    min-height: 80vh;
+                    box-sizing: border-box;
+                }
+                .navbar {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    background-color: #ffffff;
+                    padding: 1rem 2rem;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+                    border-radius: 12px;
+                    margin-bottom: 2rem;
+                }
+                .navbar-brand {
+                    font-size: 1.5rem;
+                    font-weight: bold;
+                    color: #007bff;
+                    cursor: pointer;
+                }
+                .navbar-links button {
+                    background: none;
+                    border: none;
+                    font-size: 1rem;
+                    margin-left: 1.5rem;
+                    cursor: pointer;
+                    color: #555;
+                    transition: color 0.2s ease;
+                }
+                .navbar-links button:hover,
+                .navbar-links button.active {
+                    color: #007bff;
+                    font-weight: 600;
+                }
+                .welcome-message {
+                    text-align: center;
+                    font-size: 24px;
+                    font-weight: 600;
+                    margin-bottom: 2rem;
+                }
+                .form-container, .map-container, .log-sheet-container, .trip-list-container {
+                    max-width: 900px;
+                    margin: 40px auto;
+                    background-color: #ffffff;
+                    border-radius: 12px;
+                    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+                    padding: 2.5rem;
+                }
+                .form-title, .map-title, .log-sheet-title, .trip-list-title {
+                    font-size: 18px;
+                    font-weight: 500;
+                    margin-bottom: 1.5rem;
+                    text-align: center;
+                }
+                .trip-form {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1.5rem;
+                }
+                .form-row {
+                    display: flex;
+                    gap: 2rem;
+                    flex-wrap: wrap;
+                }
+                .form-group {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.5rem;
+                    min-width: 250px;
+                }
+                .form-group.full-width {
+                    flex-basis: 100%;
+                }
+                .form-group label {
+                    font-weight: 500;
+                    color: #555;
+                }
+                .form-group input {
+                    padding: 0.75rem;
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    font-size: 1rem;
+                    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06);
+                }
+                .submit-row {
+                    justify-content: center;
+                }
+                .submit-row button {
+                    padding: 0.75rem 2rem;
+                    background-color: #007bff;
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 1rem;
+                    cursor: pointer;
+                    transition: background-color 0.3s ease;
+                }
+                .submit-row button:hover {
+                    background-color: #0056b3;
+                }
+                .map-canvas, .log-sheet-canvas {
+                    width: 100%;
+                    height: 400px;
+                    border: 1px solid #e0e0e0;
+                    border-radius: 8px;
+                    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.08);
+                }
+                .no-trip-message {
+                    text-align: center;
+                    color: #777;
+                    font-style: italic;
+                    padding: 2rem 0;
+                }
+                .trip-items {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1.5rem;
+                }
+                .trip-item {
+                    border: 1px solid #f0f0f0;
+                    border-radius: 8px;
+                    padding: 1.5rem;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+                }
+                .trip-item:hover {
+                    background-color: #f9f9f9;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+                }
+                .trip-driver-name {
+                    font-weight: bold;
+                    color: #007bff;
+                    margin-bottom: 0.5rem;
+                }
+                .trip-info, .trip-details {
+                    font-size: 0.9rem;
+                    color: #666;
+                }
+                .contact-footer {
+                    text-align: center;
+                    margin-top: 3rem;
+                    font-size: 0.9rem;
+                    color: #888;
+                }
+                .contact-footer h3 {
+                    margin: 0;
+                }
+                .modal-overlay {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background-color: rgba(0, 0, 0, 0.5);
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    z-index: 1000;
+                }
+                .modal-content {
+                    background-color: white;
+                    padding: 2rem;
+                    border-radius: 12px;
+                    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+                    max-width: 400px;
+                    width: 90%;
+                    text-align: center;
+                }
+                .modal-title {
+                    font-size: 1.5rem;
+                    font-weight: bold;
+                    margin-bottom: 1rem;
+                }
+                .modal-title.success { color: #28a745; }
+                .modal-title.error { color: #dc3545; }
+                .modal-message {
+                    font-size: 1rem;
+                    color: #555;
+                    margin-bottom: 1.5rem;
+                }
+                .modal-button {
+                    padding: 0.5rem 1.5rem;
+                    background-color: #007bff;
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    transition: background-color 0.3s ease;
+                }
+                .modal-button:hover {
+                    background-color: #0056b3;
+                }
+                @media (min-width: 768px) {
+                    .trip-form {
+                        flex-direction: row;
+                        flex-wrap: wrap;
+                    }
+                    .form-group {
+                        flex: 1;
+                    }
+                }
+            `}</style>
         </div>
     );
 };
