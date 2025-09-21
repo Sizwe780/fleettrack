@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote, Fuel, Bed, Database, ListChecks, TrendingUp, Info } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, addDoc, onSnapshot, collection } from 'firebase/firestore';
+import { getFirestore, doc, addDoc, onSnapshot, collection, query, orderBy, where, getDocs, setLogLevel } from 'firebase/firestore';
 
 const App = () => {
   // State management for UI tabs and form data
@@ -48,6 +48,7 @@ const App = () => {
       const authInstance = getAuth(app);
       setDb(dbInstance);
       setAuth(authInstance);
+      setLogLevel('debug');
 
       onAuthStateChanged(authInstance, async (authUser) => {
         if (authUser) {
@@ -159,45 +160,52 @@ const App = () => {
   // Core logic to calculate Hours of Service (HOS) and stops
   const calculateHOS = (totalDistanceMiles) => {
     const speed = 50;
-    const totalDrivingHours = totalDistanceMiles / speed;
-    const initialCycleHours = parseFloat(formData.cycleUsed) || 0;
-    const driverCycle = 70;
-    const dailyDrivingLimit = 11;
-    const dailyOnDutyLimit = 14;
-    const dailyOffDutyRequired = 10;
-    const maxFuelDistance = 1000;
+    const drivingLimit = 11;
+    const onDutyLimit = 14;
+    const totalCycle = 70;
+    const initialCycleUsed = parseFloat(formData.cycleUsed) || 0;
+    const pickupDropoffTime = 1; // 1 hour for pickup and dropoff
+    const fuelStopInterval = 1000;
 
-    let remainingCycleHours = driverCycle - initialCycleHours;
+    let distanceRemaining = totalDistanceMiles;
+    let cycleRemaining = totalCycle - initialCycleUsed;
     let days = 1;
-    let distanceCovered = 0;
     let logs = [];
     let stops = [];
+    let cumulativeDistance = 0;
 
-    while (distanceCovered < totalDistanceMiles && remainingCycleHours > 0 && days <= 8) {
-      let dailyDriving = Math.min(dailyDrivingLimit, totalDrivingHours - (distanceCovered / speed));
-      let dailyOnDuty = Math.min(dailyOnDutyLimit, dailyDriving + 2);
+    while (distanceRemaining > 0 && days <= 8) {
+      const dailyDriving = Math.min(drivingLimit, distanceRemaining / speed);
+      let dailyOnDuty = dailyDriving + pickupDropoffTime;
+      if (dailyOnDuty > onDutyLimit) dailyOnDuty = onDutyLimit;
+
+      let dailyOffDuty = 24 - dailyOnDuty;
+      if (dailyOffDuty < 10) dailyOffDuty = 10;
       
-      let offDuty = Math.max(0, 24 - dailyOnDuty);
-      if (offDuty < dailyOffDutyRequired) {
-        offDuty = dailyOffDutyRequired;
-        dailyOnDuty = 24 - offDuty;
-        dailyDriving = Math.min(dailyDriving, dailyOnDuty - 2);
-      }
-
-      if (remainingCycleHours < dailyOnDuty) {
-        dailyOnDuty = remainingCycleHours;
-        dailyDriving = Math.min(dailyDriving, dailyOnDuty - 2);
-        if (dailyDriving < 0) dailyDriving = 0;
+      if (cycleRemaining < dailyOnDuty) {
+        dailyOnDuty = cycleRemaining;
       }
       
-      remainingCycleHours -= dailyOnDuty;
-      distanceCovered += dailyDriving * speed;
+      const distanceToday = dailyDriving * speed;
+      distanceRemaining -= distanceToday;
+      cycleRemaining -= dailyOnDuty;
+      cumulativeDistance += distanceToday;
+
+      // Add a fuel stop if the cumulative distance since the last fuel stop is over 1000 miles
+      if (Math.floor(cumulativeDistance / fuelStopInterval) > stops.filter(s => s.type === 'fuel').length) {
+          stops.push({ name: `Fuel Stop`, type: 'fuel', day: days });
+      }
+      
+      // Add a rest stop for every 14 hours on duty
+      if (dailyOnDuty >= 14) {
+          stops.push({ name: `Rest Stop`, type: 'rest', day: days });
+      }
 
       const log = {
         day: days,
         driving: dailyDriving.toFixed(2),
         onDuty: dailyOnDuty.toFixed(2),
-        offDuty: offDuty.toFixed(2),
+        offDuty: dailyOffDuty.toFixed(2),
         sleeperBerth: 0,
         remarks: '',
         date: new Date(new Date(formData.date).setDate(new Date(formData.date).getDate() + days - 1)).toISOString().slice(0, 10),
@@ -206,16 +214,9 @@ const App = () => {
       };
       logs.push(log);
       days++;
-
-      if (distanceCovered >= maxFuelDistance * stops.filter(s => s.type === 'fuel').length + maxFuelDistance) {
-        stops.push({ name: `Fuel Stop (Day ${days - 1})`, type: 'fuel', day: days - 1 });
-      }
-      if (log.onDuty > 12) {
-        stops.push({ name: `Rest Stop (Day ${days - 1})`, type: 'rest', day: days - 1 });
-      }
     }
 
-    return { logs, stops, totalDrivingHours, totalDistanceMiles, days };
+    return { logs, stops, totalDrivingHours: (totalDistanceMiles / speed).toFixed(2), totalDistanceMiles: totalDistanceMiles.toFixed(2), totalDays: days - 1 };
   };
 
   // Form submission handler
@@ -256,11 +257,13 @@ const App = () => {
         const route = routeData.routes[0];
         const totalDistanceMiles = route.distance / 1609.34;
         
-        const { logs, stops, totalDrivingHours, days } = calculateHOS(totalDistanceMiles);
+        const { logs, stops, totalDrivingHours, totalDistanceMiles: finalDistance, totalDays } = calculateHOS(totalDistanceMiles);
 
         const newMapData = {
           routePolyline: route.geometry,
-          stops: stops
+          originCoords,
+          destinationCoords,
+          stops: stops,
         };
         setMapData(newMapData);
         setLogData(logs);
@@ -270,9 +273,9 @@ const App = () => {
           ...formData,
           ...newMapData,
           logs,
-          totalDistanceMiles: totalDistanceMiles.toFixed(2),
-          totalDrivingHours: totalDrivingHours.toFixed(2),
-          totalDays: days - 1,
+          totalDistanceMiles: finalDistance,
+          totalDrivingHours,
+          totalDays,
           timestamp: new Date().toISOString(),
           userId: user.uid,
         };
@@ -314,12 +317,12 @@ const App = () => {
       map.current = new window.mapboxgl.Map({
         container: mapContainer.current,
         style: 'mapbox://styles/mapbox/streets-v11',
-        center: [-98.5833, 39.8333],
+        center: mapData.originCoords,
         zoom: 3,
       });
   
       map.current.on('load', () => {
-        const coordinates = window.mapboxgl.GeometryUtil?.decode(mapData.routePolyline);
+        const coordinates = window.mapboxgl.GeometryUtil.decode(mapData.routePolyline);
         
         if (coordinates?.length > 0) {
           map.current.addSource('route', {
@@ -357,7 +360,7 @@ const App = () => {
         mapData.stops?.forEach(stop => {
           const markerColor = stop.type === 'fuel' ? '#f59e0b' : '#10b981';
           new window.mapboxgl.Marker({ color: markerColor })
-            .setLngLat([stop.lng, stop.lat])
+            .setLngLat(stop.coords)
             .setPopup(new window.mapboxgl.Popup({ offset: 25 }).setHTML(`<h3>${stop.name}</h3>`))
             .addTo(map.current);
         });
@@ -804,7 +807,6 @@ const App = () => {
                     id="origin"
                     name="origin"
                     type="text"
-                    key="origin-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="Enter origin city or address"
                     value={formData.origin}
@@ -820,7 +822,6 @@ const App = () => {
                     id="destination"
                     name="destination"
                     type="text"
-                    key="destination-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="Enter destination city or address"
                     value={formData.destination}
@@ -836,7 +837,6 @@ const App = () => {
                     id="date"
                     name="date"
                     type="date"
-                    key="date-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     value={formData.date}
                     onChange={handleInputChange}
@@ -851,7 +851,6 @@ const App = () => {
                     id="driverName"
                     name="driverName"
                     type="text"
-                    key="driverName-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="Enter driver's name"
                     value={formData.driverName}
@@ -867,7 +866,6 @@ const App = () => {
                     id="vehicleNumber"
                     name="vehicleNumber"
                     type="text"
-                    key="vehicleNumber-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="e.g., ABC-123"
                     value={formData.vehicleNumber}
@@ -883,7 +881,6 @@ const App = () => {
                     id="cycleUsed"
                     name="cycleUsed"
                     type="number"
-                    key="cycleUsed-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="e.g., 20"
                     value={formData.cycleUsed}
@@ -899,7 +896,6 @@ const App = () => {
                     id="departureTime"
                     name="departureTime"
                     type="time"
-                    key="departureTime-input"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     value={formData.departureTime}
                     onChange={handleInputChange}
