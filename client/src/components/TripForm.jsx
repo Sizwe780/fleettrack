@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import './Home.css';
+
 
 function TripForm() {
   const [origin, setOrigin] = useState('');
