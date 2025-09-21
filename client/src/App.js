@@ -5,13 +5,15 @@ import { createRoot } from 'react-dom/client';
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
   const [currentLocation, setCurrentLocation] = useState('');
-  const [origin, setOrigin] = useState('');
-  const [destination, setDestination] = useState('');
-  const [date, setDate] = useState('');
-  const [driverName, setDriverName] = useState('');
-  const [vehicleNumber, setVehicleNumber] = useState('');
-  const [cycleUsed, setCycleUsed] = useState('');
-  const [departureTime, setDepartureTime] = useState('');
+  const [formData, setFormData] = useState({
+    origin: '',
+    destination: '',
+    date: '',
+    driverName: '',
+    vehicleNumber: '',
+    cycleUsed: '',
+    departureTime: '',
+  });
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
   const [mapData, setMapData] = useState(null);
@@ -21,6 +23,14 @@ const App = () => {
   const [locationStatus, setLocationStatus] = useState(null);
 
   const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2U3ODAiLCJhIjoiY2x1d2R5ZGZqMGQwMTJpcXBtYXk2dW1icSJ9.9j1hS_x2n3K7x_j5l001Q';
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prevData => ({
+      ...prevData,
+      [name]: value,
+    }));
+  };
 
   const handleGetCurrentLocation = () => {
     setIsLocating(true);
@@ -34,7 +44,6 @@ const App = () => {
           setMessage('Location found successfully!');
           setMessageType('success');
           
-          // Use a reverse geocoding service (like Mapbox's) to get a human-readable address
           fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${MAPBOX_ACCESS_TOKEN}`)
             .then(response => response.json())
             .then(data => {
@@ -96,8 +105,8 @@ const App = () => {
           sleeperBerth: sleeperBerthHrs,
           date: new Date(new Date().setDate(new Date().getDate() + day - 1)).toISOString().slice(0, 10),
           remarks: 'Trip started as planned.',
-          driverName: driverName,
-          vehicleNumber: vehicleNumber,
+          driverName: formData.driverName,
+          vehicleNumber: formData.vehicleNumber,
         });
         totalOnDuty += onDutyHrs;
         day++;
@@ -106,7 +115,7 @@ const App = () => {
     };
 
     try {
-      const mockLogs = generateMockLogs(Number(cycleUsed));
+      const mockLogs = generateMockLogs(Number(formData.cycleUsed));
       const mockApiResponse = {
         routePolyline: 's~gpGt_l`Thk`G~{a@~naI_u`E',
         stops: [
@@ -484,11 +493,12 @@ const App = () => {
                   </label>
                   <input
                     id="origin"
+                    name="origin"
                     type="text"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="Enter origin city or address"
-                    value={origin}
-                    onChange={(e) => setOrigin(e.target.value)}
+                    value={formData.origin}
+                    onChange={handleInputChange}
                     required
                   />
                 </div>
@@ -498,11 +508,12 @@ const App = () => {
                   </label>
                   <input
                     id="destination"
+                    name="destination"
                     type="text"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="Enter destination city or address"
-                    value={destination}
-                    onChange={(e) => setDestination(e.target.value)}
+                    value={formData.destination}
+                    onChange={handleInputChange}
                     required
                   />
                 </div>
@@ -512,10 +523,11 @@ const App = () => {
                   </label>
                   <input
                     id="date"
+                    name="date"
                     type="date"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
+                    value={formData.date}
+                    onChange={handleInputChange}
                     required
                   />
                 </div>
@@ -525,11 +537,12 @@ const App = () => {
                   </label>
                   <input
                     id="driverName"
+                    name="driverName"
                     type="text"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="Enter driver's name"
-                    value={driverName}
-                    onChange={(e) => setDriverName(e.target.value)}
+                    value={formData.driverName}
+                    onChange={handleInputChange}
                     required
                   />
                 </div>
@@ -539,11 +552,12 @@ const App = () => {
                   </label>
                   <input
                     id="vehicleNumber"
+                    name="vehicleNumber"
                     type="text"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="e.g., ABC-123"
-                    value={vehicleNumber}
-                    onChange={(e) => setVehicleNumber(e.target.value)}
+                    value={formData.vehicleNumber}
+                    onChange={handleInputChange}
                     required
                   />
                 </div>
@@ -553,11 +567,12 @@ const App = () => {
                   </label>
                   <input
                     id="cycleUsed"
+                    name="cycleUsed"
                     type="number"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
                     placeholder="e.g., 20"
-                    value={cycleUsed}
-                    onChange={(e) => setCycleUsed(e.target.value)}
+                    value={formData.cycleUsed}
+                    onChange={handleInputChange}
                     required
                   />
                 </div>
@@ -567,10 +582,11 @@ const App = () => {
                   </label>
                   <input
                     id="departureTime"
+                    name="departureTime"
                     type="time"
                     className="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
-                    value={departureTime}
-                    onChange={(e) => setDepartureTime(e.target.value)}
+                    value={formData.departureTime}
+                    onChange={handleInputChange}
                     required
                   />
                 </div>
