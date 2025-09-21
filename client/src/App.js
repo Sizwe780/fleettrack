@@ -1,13 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import 'leaflet/dist/leaflet.css';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import mapboxgl from 'mapbox-gl';
 
-// Note: Mapbox GL JS and CSS must be loaded externally
-// I've included the CSS here for a single-file solution.
 const MAPBOX_CSS = `
 .mapboxgl-map {
     width: 100%;
@@ -26,6 +23,9 @@ const MAPBOX_CSS = `
 .mapboxgl-marker.destination {
     background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23F44336"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/></svg>');
 }
+.mapboxgl-marker.stop {
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%231E88E5"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/></svg>');
+}
 `;
 
 const API = axios.create({
@@ -43,56 +43,157 @@ const generateLogSheet = (trip) => {
   const headerHeight = 25;
   const tableTop = margin + headerHeight + 5;
   const tableWidth = pageWidth - 2 * margin;
-
-  doc.setFontSize(16);
-  doc.text("Daily Log Sheet", pageWidth / 2, margin + 5, { align: 'center' });
-  doc.setFontSize(fontSize);
-  doc.text(`Driver: ${trip.driverName}`, margin, margin + 12);
-  doc.text(`Vehicle: ${trip.vehicleNumber}`, margin, margin + 18);
-  doc.text(`Date: ${new Date(trip.departureTime).toLocaleDateString()}`, pageWidth - margin, margin + 12, { align: 'right' });
-  doc.text(`Trip ID: ${trip._id}`, pageWidth - margin, margin + 18, { align: 'right' });
-
-  doc.setLineWidth(0.5);
-  doc.rect(margin, tableTop, tableWidth, 40);
   const sectionHeight = 40;
-  const timeLabels = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+  const dailyDrivingHours = 11;
+  const requiredOffDutyHours = 10;
+  const pickupDropoffHours = 1; // 1 hour for each
+  const totalTripHours = trip.durationInHours + (trip.stops.length * requiredOffDutyHours) + (pickupDropoffHours * 2);
+  const totalTripDays = Math.ceil(totalTripHours / 24);
 
-  for (let i = 0; i < 24; i++) {
-    const x = margin + (i * tableWidth) / 24;
-    doc.line(x, tableTop, x, tableTop + sectionHeight);
-    doc.text(timeLabels[i], x + (tableWidth / 48), tableTop - 2, { align: 'center' });
+  // Helper function to draw log grid and labels
+  const drawLogGrid = (doc, pageNum, trip) => {
+    doc.setFontSize(16);
+    doc.text(`Daily Log Sheet - Day ${pageNum}`, pageWidth / 2, margin + 5, { align: 'center' });
+    doc.setFontSize(fontSize);
+    doc.text(`Driver: ${trip.driverName}`, margin, margin + 12);
+    doc.text(`Vehicle: ${trip.vehicleNumber}`, margin, margin + 18);
+    doc.text(`Date: ${new Date(trip.departureTime).toLocaleDateString()}`, pageWidth - margin, margin + 12, { align: 'right' });
+    doc.text(`Trip ID: ${trip._id}`, pageWidth - margin, margin + 18, { align: 'right' });
+  
+    doc.setLineWidth(0.5);
+    doc.rect(margin, tableTop, tableWidth, sectionHeight);
+    const timeLabels = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+    for (let i = 0; i < 24; i++) {
+      const x = margin + (i * tableWidth) / 24;
+      doc.line(x, tableTop, x, tableTop + sectionHeight);
+      doc.text(timeLabels[i], x + (tableWidth / 48), tableTop - 2, { align: 'center' });
+    }
+  
+    const logSections = [
+      { name: 'OFF-DUTY', y: tableTop + sectionHeight * 0.1 },
+      { name: 'SLEEPER BERTH', y: tableTop + sectionHeight * 0.35 },
+      { name: 'DRIVING', y: tableTop + sectionHeight * 0.6 },
+      { name: 'ON-DUTY', y: tableTop + sectionHeight * 0.85 }
+    ];
+    logSections.forEach(section => {
+      doc.text(section.name, margin - 2, section.y, { align: 'right' });
+    });
+  };
+  
+  // Helper function to draw log entries
+  const drawLogEntries = (doc, startTime, endTime, status) => {
+    const startHour = startTime.getHours() + (startTime.getMinutes() / 60);
+    const endHour = endTime.getHours() + (endTime.getMinutes() / 60);
+    const startX = margin + (tableWidth / 24) * startHour;
+    const endX = margin + (tableWidth / 24) * endHour;
+    let yPos;
+    switch(status) {
+      case 'OFF-DUTY': yPos = tableTop + sectionHeight * 0.1; break;
+      case 'DRIVING': yPos = tableTop + sectionHeight * 0.6; break;
+      case 'ON-DUTY': yPos = tableTop + sectionHeight * 0.85; break;
+      case 'SLEEPER BERTH': yPos = tableTop + sectionHeight * 0.35; break;
+      default: return;
+    }
+    doc.setLineWidth(1.5);
+    doc.line(startX, yPos, endX, yPos);
+  };
+  
+  let currentHour = 0;
+  
+  for (let day = 1; day <= totalTripDays; day++) {
+    if (day > 1) {
+      doc.addPage();
+    }
+    drawLogGrid(doc, day, trip);
+  
+    let dailyHours = 0;
+    
+    // Start of the day: Assume off-duty until the trip starts or a shift continues
+    let dayStart = new Date(trip.departureTime);
+    dayStart.setDate(dayStart.getDate() + day - 1);
+    dayStart.setHours(0, 0, 0, 0);
+  
+    let dayEnd = new Date(dayStart);
+    dayEnd.setHours(23, 59, 59, 999);
+  
+    let currentTime = new Date(trip.departureTime);
+    let tripDuration = trip.durationInHours;
+  
+    // Log previous day's off-duty time
+    if (day > 1) {
+      const offDutyStart = new Date(dayStart);
+      const offDutyEnd = new Date(dayStart);
+      offDutyEnd.setHours(offDutyEnd.getHours() + requiredOffDutyHours);
+      drawLogEntries(doc, offDutyStart, offDutyEnd, 'OFF-DUTY');
+    }
+  
+    // Draw the trip log
+    let timeElapsed = (day - 1) * 24;
+    while (timeElapsed < totalTripHours && dailyHours < 24) {
+      let segmentStart = new Date(currentTime.getTime());
+      
+      let nextStatus;
+      let segmentDuration;
+  
+      if (trip.pickupLocation && trip.dropoffLocation) {
+        // Assume 1-hour on-duty for pickup and dropoff
+        if (timeElapsed === 0) {
+          nextStatus = 'ON-DUTY';
+          segmentDuration = pickupDropoffHours;
+        }
+      }
+      
+      // Driving segment
+      if (nextStatus !== 'ON-DUTY') {
+        nextStatus = 'DRIVING';
+        segmentDuration = Math.min(dailyDrivingHours, tripDuration - timeElapsed);
+      }
+      
+      // Off-duty break segment
+      if (segmentDuration + dailyHours > dailyDrivingHours) {
+        segmentDuration = dailyDrivingHours - dailyHours;
+        const breakStart = new Date(segmentStart.getTime() + segmentDuration * 60 * 60 * 1000);
+        const breakEnd = new Date(breakStart.getTime() + requiredOffDutyHours * 60 * 60 * 1000);
+        
+        drawLogEntries(doc, segmentStart, new Date(segmentStart.getTime() + segmentDuration * 60 * 60 * 1000), nextStatus);
+        drawLogEntries(doc, breakStart, breakEnd, 'OFF-DUTY');
+        
+        currentTime = new Date(breakEnd.getTime());
+        timeElapsed += segmentDuration + requiredOffDutyHours;
+        dailyHours += segmentDuration + requiredOffDutyHours;
+  
+      } else {
+        drawLogEntries(doc, segmentStart, new Date(segmentStart.getTime() + segmentDuration * 60 * 60 * 1000), nextStatus);
+        currentTime = new Date(segmentStart.getTime() + segmentDuration * 60 * 60 * 1000);
+        timeElapsed += segmentDuration;
+        dailyHours += segmentDuration;
+      }
+    }
+  
+    // Add remaining fields to PDF
+    const tableData = [
+      ['Origin', trip.origin],
+      ['Destination', trip.destination],
+      ['Pickup Location', trip.pickupLocation || 'N/A'],
+      ['Dropoff Location', trip.dropoffLocation || 'N/A'],
+      ['Current Cycle Used', `${trip.cycleUsed} hrs`],
+      ['Total Driving Hours', `${trip.durationInHours.toFixed(2)} hrs`],
+      ['Total Stops', `${trip.stops.length}`],
+    ];
+  
+    doc.autoTable({
+      startY: tableTop + sectionHeight + 10,
+      head: [['Field', 'Details']],
+      body: tableData,
+      theme: 'grid',
+      margin: { left: margin, right: margin }
+    });
+  
+    doc.setFontSize(8);
+    doc.text("Driver Signature: _________________________________", margin, pageHeight - margin - 5);
+    doc.text("Supervisor Signature: _________________________________", pageWidth - margin, pageHeight - margin - 5, { align: 'right' });
   }
-
-  const logSections = [
-    { name: 'OFF-DUTY', y: tableTop + sectionHeight * 0.1 },
-    { name: 'SLEEPER BERTH', y: tableTop + sectionHeight * 0.35 },
-    { name: 'DRIVING', y: tableTop + sectionHeight * 0.6 },
-    { name: 'ON-DUTY', y: tableTop + sectionHeight * 0.85 }
-  ];
-
-  logSections.forEach(section => {
-    doc.text(section.name, margin - 2, section.y, { align: 'right' });
-  });
-
-  const tableData = [
-    ['Origin', trip.origin],
-    ['Destination', trip.destination],
-    ['Pickup Location', trip.pickupLocation],
-    ['Dropoff Location', trip.dropoffLocation],
-    ['Current Cycle Used', `${trip.cycleUsed} hrs`],
-  ];
-
-  doc.autoTable({
-    startY: tableTop + sectionHeight + 10,
-    head: [['Field', 'Details']],
-    body: tableData,
-    theme: 'grid',
-    margin: { left: margin, right: margin }
-  });
-
-  doc.setFontSize(8);
-  doc.text("Driver Signature: _________________________________", margin, pageHeight - margin - 5);
-  doc.text("Supervisor Signature: _________________________________", pageWidth - margin, pageHeight - margin - 5, { align: 'right' });
+  
   doc.save(`LogSheet-${trip._id}.pdf`);
 };
 
@@ -110,7 +211,7 @@ function Navbar() {
   );
 }
 
-function TripMap({ origin, destination }) {
+function TripMap({ origin, destination, tripData, onRouteFetched }) {
   const mapContainer = useRef(null);
   const map = useRef(null);
 
@@ -124,51 +225,105 @@ function TripMap({ origin, destination }) {
       zoom: 6,
     });
 
-    map.current.on('load', () => {
-      new mapboxgl.Marker({ color: '#4CAF50' })
-        .setLngLat([origin.lng, origin.lat])
-        .setPopup(new mapboxgl.Popup().setText('Origin'))
-        .addTo(map.current);
+    const fetchRoute = async () => {
+      try {
+        const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
+        const response = await axios.get(url);
+        const data = response.data.routes[0];
+        const route = data.geometry.coordinates;
+        const distance = data.distance; // in meters
+        const duration = data.duration; // in seconds
 
-      new mapboxgl.Marker({ color: '#F44336' })
-        .setLngLat([destination.lng, destination.lat])
-        .setPopup(new mapboxgl.Popup().setText('Destination'))
-        .addTo(map.current);
+        const routeDurationHours = duration / 3600;
+        const routeDistanceMiles = distance * 0.000621371;
 
-      const bounds = new mapboxgl.LngLatBounds([origin.lng, origin.lat], [destination.lng, destination.lat]);
-      map.current.fitBounds(bounds, {
-        padding: 50
-      });
+        const stops = [];
+        let drivingTime = 0;
+        let lastStopPoint = origin;
+        let lastStopDistance = 0;
 
-      map.current.addSource('route', {
-        type: 'geojson',
-        data: {
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              [origin.lng, origin.lat],
-              [destination.lng, destination.lat],
-            ],
-          },
-        },
-      });
+        // Calculate stops based on 11-hour driving rule
+        for (let i = 0; i < data.legs[0].steps.length; i++) {
+            const step = data.legs[0].steps[i];
+            drivingTime += step.duration;
+            lastStopDistance += step.distance;
 
-      map.current.addLayer({
-        id: 'route',
-        type: 'line',
-        source: 'route',
-        layout: {
-          'line-join': 'round',
-          'line-cap': 'round',
-        },
-        paint: {
-          'line-color': '#1E88E5',
-          'line-width': 4,
-        },
-      });
-    });
+            if (drivingTime > (11 * 3600) || lastStopDistance > (1000 * 1609.34)) { // 11 hours or 1000 miles
+                const stopLng = step.maneuver.location[0];
+                const stopLat = step.maneuver.location[1];
+                stops.push({
+                    type: drivingTime > (11 * 3600) ? 'Rest' : 'Fuel',
+                    location: { lng: stopLng, lat: stopLat },
+                });
+                drivingTime = 0;
+                lastStopDistance = 0;
+            }
+        }
+
+        onRouteFetched({
+          durationInHours: routeDurationHours,
+          stops: stops,
+        });
+
+        if (map.current.getSource('route')) {
+          map.current.getSource('route').setData({
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'LineString',
+              coordinates: route,
+            },
+          });
+        } else {
+          map.current.addSource('route', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              properties: {},
+              geometry: {
+                type: 'LineString',
+                coordinates: route,
+              },
+            },
+          });
+          map.current.addLayer({
+            id: 'route',
+            type: 'line',
+            source: 'route',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: { 'line-color': '#1E88E5', 'line-width': 4 },
+          });
+        }
+
+        new mapboxgl.Marker({ color: '#4CAF50' })
+          .setLngLat([origin.lng, origin.lat])
+          .setPopup(new mapboxgl.Popup().setText('Origin'))
+          .addTo(map.current);
+
+        new mapboxgl.Marker({ color: '#F44336' })
+          .setLngLat([destination.lng, destination.lat])
+          .setPopup(new mapboxgl.Popup().setText('Destination'))
+          .addTo(map.current);
+
+        stops.forEach((stop, index) => {
+          new mapboxgl.Marker({ color: '#1E88E5' })
+            .setLngLat([stop.location.lng, stop.location.lat])
+            .setPopup(new mapboxgl.Popup().setText(`${stop.type} Stop ${index + 1}`))
+            .addTo(map.current);
+        });
+
+        const bounds = new mapboxgl.LngLatBounds();
+        bounds.extend([origin.lng, origin.lat]);
+        bounds.extend([destination.lng, destination.lat]);
+        stops.forEach(stop => bounds.extend([stop.location.lng, stop.location.lat]));
+        map.current.fitBounds(bounds, { padding: 50 });
+
+      } catch (error) {
+        console.error('Error fetching route:', error);
+      }
+    };
+
+    map.current.on('load', fetchRoute);
 
     return () => map.current?.remove();
   }, [origin, destination]);
@@ -182,6 +337,7 @@ function TripMap({ origin, destination }) {
 }
 
 function TripCard({ trip }) {
+  const [routeInfo, setRouteInfo] = useState({ durationInHours: 0, stops: [] });
   const originCoord = { lat: parseFloat(trip.origin.split(',')[0]), lng: parseFloat(trip.origin.split(',')[1]) };
   const destinationCoord = { lat: parseFloat(trip.destination.split(',')[0]), lng: parseFloat(trip.destination.split(',')[1]) };
 
@@ -200,6 +356,7 @@ function TripCard({ trip }) {
     overdue: 'bg-red-500'
   };
   const status = getStatus(trip.departureTime, trip.cycleUsed);
+  const tripWithStops = { ...trip, durationInHours: routeInfo.durationInHours, stops: routeInfo.stops };
 
   return (
     <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6 flex flex-col h-full">
@@ -213,14 +370,15 @@ function TripCard({ trip }) {
         <p className="text-sm text-gray-600 mb-2"><strong>Destination:</strong> {trip.destination}</p>
         <p className="text-sm text-gray-600 mb-2"><strong>Departure:</strong> {new Date(trip.departureTime).toLocaleString()}</p>
         <p className="text-sm text-gray-600 mb-2"><strong>Cycle Used:</strong> {trip.cycleUsed} hrs</p>
+        <p className="text-sm text-gray-600 mb-2"><strong>Route Stops:</strong> {routeInfo.stops.length}</p>
       </div>
-      <TripMap origin={originCoord} destination={destinationCoord} />
+      <TripMap origin={originCoord} destination={destinationCoord} onRouteFetched={setRouteInfo} />
       <div className="flex justify-between items-center mt-4">
         <span className={`px-3 py-1 text-xs font-semibold rounded-full capitalize text-white ${statusColor[status]}`}>
           {status}
         </span>
         <button
-          onClick={() => generateLogSheet(trip)}
+          onClick={() => generateLogSheet(tripWithStops)}
           className="bg-blue-600 text-white py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           Print Log Sheet
@@ -233,6 +391,8 @@ function TripCard({ trip }) {
 function TripForm() {
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
+  const [pickupLocation, setPickupLocation] = useState('');
+  const [dropoffLocation, setDropoffLocation] = useState('');
   const [departureTime, setDepartureTime] = useState('');
   const [driverName, setDriverName] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
@@ -265,6 +425,8 @@ function TripForm() {
     const tripData = {
       origin,
       destination,
+      pickupLocation,
+      dropoffLocation,
       departureTime,
       driverName,
       vehicleNumber,
@@ -276,6 +438,15 @@ function TripForm() {
       await API.post('/api/trips/', tripData);
       setMessage('Trip submitted successfully!');
       setMessageType('success');
+      // Reset form fields
+      setOrigin('');
+      setDestination('');
+      setPickupLocation('');
+      setDropoffLocation('');
+      setDepartureTime('');
+      setDriverName('');
+      setVehicleNumber('');
+      setCycleUsed('');
     } catch (error) {
       console.error('Submission failed:', error.response?.data || error.message);
       setMessage('Failed to submit trip.');
@@ -311,23 +482,43 @@ function TripForm() {
             />
           </div>
           <div>
-            <label className="block text-gray-700 font-medium mb-1">Origin</label>
+            <label className="block text-gray-700 font-medium mb-1">Origin (Lat, Lng)</label>
             <input
               type="text"
               value={origin}
               onChange={(e) => setOrigin(e.target.value)}
               className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="e.g. 34.0522, -118.2437"
               required
             />
           </div>
           <div>
-            <label className="block text-gray-700 font-medium mb-1">Destination</label>
+            <label className="block text-gray-700 font-medium mb-1">Destination (Lat, Lng)</label>
             <input
               type="text"
               value={destination}
               onChange={(e) => setDestination(e.target.value)}
               className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="e.g. 40.7128, -74.0060"
               required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-700 font-medium mb-1">Pickup Location</label>
+            <input
+              type="text"
+              value={pickupLocation}
+              onChange={(e) => setPickupLocation(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-gray-700 font-medium mb-1">Dropoff Location</label>
+            <input
+              type="text"
+              value={dropoffLocation}
+              onChange={(e) => setDropoffLocation(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
