@@ -1,9 +1,26 @@
 {
+  "name": "fleettrack",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
   "dependencies": {
+    "autoprefixer": "^10.4.16",
+    "chart.js": "^4.5.0",
     "firebase": "^12.3.0",
-    "http-proxy-middleware": "^3.0.5",
     "lucide-react": "^0.544.0",
     "mapbox-gl": "^3.15.0",
-    "react-map-gl": "^6.1.16"
+    "postcss": "^8.4.31",
+    "react": "^18.2.0",
+    "react-chartjs-2": "^5.3.0",
+    "react-dom": "^18.2.0",
+    "react-map-gl": "^6.1.16",
+    "tailwindcss": "^3.3.3"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
   }
 }

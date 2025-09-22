@@ -4,7 +4,6 @@ import { Bar, Line, Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement, LineElement, ArcElement, Tooltip, Legend } from 'chart.js';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-
 ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, ArcElement, Tooltip, Legend);
 
 const AnalyticsDashboard = () => {

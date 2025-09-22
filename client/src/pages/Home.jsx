@@ -6,7 +6,6 @@ import Navbar from './Navbar';
 const Home = () => {
   const navigate = useNavigate();
 
-  // Form fields (excluding location)
   const [formData, setFormData] = useState({
     driverName: '',
     pickupLocation: '',
@@ -15,15 +14,11 @@ const Home = () => {
     departure: ''
   });
 
-  // Location state
   const [currentLocation, setCurrentLocation] = useState('');
   const [locationDetected, setLocationDetected] = useState(false);
-
-  // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Detect location once on mount
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
@@ -40,16 +35,11 @@ const Home = () => {
     );
   }, []);
 
-  // Handle input changes
   const handleChange = ({ target }) => {
     const { name, value } = target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value
-    }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -74,101 +64,110 @@ const Home = () => {
   return (
     <>
       <Navbar />
-      <main className="min-h-screen bg-gray-100 flex flex-col items-center justify-center px-4">
-        <h1 className="text-2xl font-bold mb-6">Welcome, ready to log your trip? ✨</h1>
+      <main className="min-h-screen bg-gray-100 px-4 py-10">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Welcome, ready to log your trip? ✨</h1>
+          <p className="text-gray-500 mb-6">Fill in the details below to plan your next haul.</p>
 
-        {error && <div className="mb-4 text-red-600 font-medium">{error}</div>}
+          {error && <div className="mb-4 text-red-600 font-medium">{error}</div>}
 
-        <form
-          onSubmit={handleSubmit}
-          className="bg-white shadow-lg rounded-xl p-6 w-full max-w-4xl grid grid-cols-2 gap-6 relative z-10"
-        >
-          {/* Left Column */}
-          <div className="flex flex-col space-y-4">
-            <label className="block text-sm font-medium">
-              Driver Name
-              <input
-                type="text"
-                name="driverName"
-                value={formData.driverName}
-                onChange={handleChange}
-                className="w-full border p-2 rounded mt-1"
-                required
-              />
-            </label>
+          <form
+            onSubmit={handleSubmit}
+            className="bg-white shadow-lg rounded-xl p-6 grid grid-cols-1 md:grid-cols-2 gap-6"
+          >
+            {/* Left Column */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Driver Name</label>
+                <input
+                  type="text"
+                  name="driverName"
+                  value={formData.driverName}
+                  onChange={handleChange}
+                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
 
-            <label className="block text-sm font-medium">
-              Departure Date & Time
-              <input
-                type="datetime-local"
-                name="departure"
-                value={formData.departure}
-                onChange={handleChange}
-                className="w-full border p-2 rounded mt-1"
-                required
-              />
-            </label>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Departure Date & Time</label>
+                <input
+                  type="datetime-local"
+                  name="departure"
+                  value={formData.departure}
+                  onChange={handleChange}
+                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
 
-            <label className="block text-sm font-medium">
-              Origin
-              <input
-                type="text"
-                name="pickupLocation"
-                value={formData.pickupLocation}
-                onChange={handleChange}
-                className="w-full border p-2 rounded mt-1"
-                required
-              />
-            </label>
-          </div>
-
-          {/* Right Column */}
-          <div className="flex flex-col space-y-4">
-            <label className="block text-sm font-medium">
-              Cycle Used (hrs)
-              <input
-                type="number"
-                name="cycleHours"
-                value={formData.cycleHours}
-                onChange={handleChange}
-                className="w-full border p-2 rounded mt-1"
-                required
-              />
-            </label>
-
-            <label className="block text-sm font-medium">
-              Destination
-              <input
-                type="text"
-                name="dropoffLocation"
-                value={formData.dropoffLocation}
-                onChange={handleChange}
-                className="w-full border p-2 rounded mt-1"
-                required
-              />
-            </label>
-
-            <div className="flex items-center space-x-2 mt-2">
-              <span className="text-sm font-medium">Location</span>
-              <span className={`w-3 h-3 rounded-full ${locationDetected ? 'bg-green-500' : 'bg-red-500'}`} />
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Origin</label>
+                <input
+                  type="text"
+                  name="pickupLocation"
+                  value={formData.pickupLocation}
+                  onChange={handleChange}
+                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Submit Button */}
-          <div className="col-span-2 flex justify-end">
-            <button
-              type="submit"
-              disabled={loading}
-              className={`px-6 py-2 rounded text-white ${loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
-            >
-              {loading ? 'Submitting...' : 'Submit'}
-            </button>
-          </div>
-        </form>
+            {/* Right Column */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Cycle Used (hrs)</label>
+                <input
+                  type="number"
+                  name="cycleHours"
+                  value={formData.cycleHours}
+                  onChange={handleChange}
+                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
 
-        <footer className="mt-6 text-sm text-gray-600">
-          sizwe.ngwenya7@gmail.com
-        </footer>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Destination</label>
+                <input
+                  type="text"
+                  name="dropoffLocation"
+                  value={formData.dropoffLocation}
+                  onChange={handleChange}
+                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center space-x-2 mt-2">
+                <span className="text-sm font-medium text-gray-700">Location</span>
+                <span
+                  className={`w-3 h-3 rounded-full ${
+                    locationDetected ? 'bg-green-500' : 'bg-red-500'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <div className="col-span-1 md:col-span-2 flex justify-end">
+              <button
+                type="submit"
+                disabled={loading}
+                className={`px-6 py-2 rounded text-white font-semibold ${
+                  loading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                {loading ? 'Submitting...' : 'Submit'}
+              </button>
+            </div>
+          </form>
+
+          <footer className="mt-6 text-sm text-gray-600 text-right">
+            sizwe.ngwenya7@gmail.com
+          </footer>
+        </div>
       </main>
     </>
   );
