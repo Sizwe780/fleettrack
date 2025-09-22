@@ -496,7 +496,7 @@ function analyzeTrip(routeData, currentCycleUsed) {
       `A 30-minute break is mandatory after 8 cumulative hours of driving.`,
       `A 10-hour off-duty break is required at the end of the day.`
     ],
-    // ✅ Flattened structure—Firestore-safe
+    // ✅ Flattened structure—no nested arrays
     dailyLogs: [
       { day: 1, status: 'On Duty', duration: 1 },
       { day: 1, status: 'Driving', duration: 5.5 },
