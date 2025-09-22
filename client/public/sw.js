@@ -1,7 +1,7 @@
 const CACHE_NAME = 'fleettrack-cache-v2';
 const urlsToCache = [
   '/',
-  '/manifest.webmanifest',
+  '/manifest.json',
   '/favicon.ico',
   '/logo192.png',
   '/logo512.png',

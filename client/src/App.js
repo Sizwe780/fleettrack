@@ -487,6 +487,31 @@ function analyzeTrip(routeData, currentCycleUsed) {
   const distanceMiles = routeData.distance * 0.000621371;
   const durationHours = routeData.duration / 3600;
 
+  const logs = [
+    { day: 1, status: 'On Duty', duration: 1 },
+    { day: 1, status: 'Driving', duration: 5.5 },
+    { day: 1, status: 'Off Duty', duration: 0.5 },
+    { day: 1, status: 'Driving', duration: 5.5 },
+    { day: 1, status: 'On Duty', duration: 1 },
+    { day: 1, status: 'Off Duty', duration: 10 }
+  ];
+
+  // 🧠 Detect break compliance
+  const breakTaken = logs.some(log => log.status === 'Off Duty' && log.duration >= 0.5);
+  const offDutyHours = logs
+    .filter(log => log.status === 'Off Duty')
+    .reduce((sum, log) => sum + log.duration, 0);
+
+  // 📈 Fleet Health Scoring
+  function scoreTrip() {
+    let score = 100;
+    if (durationHours > 11) score -= 20;
+    if (currentCycleUsed > 70) score -= 15;
+    if (!breakTaken) score -= 10;
+    if (offDutyHours < 10) score -= 10;
+    return Math.max(score, 0);
+  }
+
   return {
     distanceMiles,
     durationHours,
@@ -494,17 +519,13 @@ function analyzeTrip(routeData, currentCycleUsed) {
       `Trip is ~${distanceMiles.toFixed(0)} miles and will require ${durationHours.toFixed(1)} hours of driving.`,
       `Day 1: Max 11 hours driving within a 14-hour on-duty window.`,
       `A 30-minute break is mandatory after 8 cumulative hours of driving.`,
-      `A 10-hour off-duty break is required at the end of the day.`
+      `A 10-hour off-duty break is required at the end of the day.`,
+      `Fleet Health Score: ${scoreTrip()} / 100`
     ],
-    // ✅ Flattened structure—no nested arrays
-    dailyLogs: [
-      { day: 1, status: 'On Duty', duration: 1 },
-      { day: 1, status: 'Driving', duration: 5.5 },
-      { day: 1, status: 'Off Duty', duration: 0.5 },
-      { day: 1, status: 'Driving', duration: 5.5 },
-      { day: 1, status: 'On Duty', duration: 1 },
-      { day: 1, status: 'Off Duty', duration: 10 }
-    ],
+    dailyLogs: logs,
+    breakTaken,
+    offDutyHours,
+    healthScore: scoreTrip(),
     profitability: {
       inputs: {
         ratePerMile: 3.50,
@@ -523,7 +544,6 @@ function analyzeTrip(routeData, currentCycleUsed) {
     }
   };
 }
-
 function drawLogSheet(canvasRef, dayLog) { /* ... same as previous ... */ }
 
 const getNextService = (vehicle) => {
