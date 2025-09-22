@@ -18,6 +18,7 @@
     "react-chartjs-2": "^5.3.0",
     "react-dom": "^18.2.0",
     "react-map-gl": "^6.1.16",
+    "recharts": "^3.2.1",
     "tailwindcss": "^3.3.3"
   },
   "devDependencies": {

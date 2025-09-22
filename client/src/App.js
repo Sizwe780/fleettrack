@@ -1,21 +1,40 @@
-// ✅ ALL IMPORTS FIRST
-import PlaceholderCard from './components/PlaceholderCard';
+// ✅ Core & React
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import Map, { Source, Layer, Marker } from 'react-map-gl';
+
+// ✅ Mapbox (react-map-gl@8.x requires subpath imports)
+import { Map, Source, Layer, Marker } from 'react-map-gl/mapbox'; // or 'react-map-gl/maplibre' if using MapLibre
 import 'mapbox-gl/dist/mapbox-gl.css';
+
+// ✅ Lucide Icons
 import {
   Truck, MapPin, DollarSign, UploadCloud, ShieldCheck, FileText, Plus,
   Home, ListChecks, Loader, Car, Star, Fuel, TrendingUp, BarChart2, Wrench, Trash2
 } from 'lucide-react';
 
+// ✅ Firebase Modular SDK
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import {
-  getFirestore, doc, addDoc, onSnapshot, collection, serverTimestamp
+  getAuth,
+  signInAnonymously,
+  onAuthStateChanged
+} from 'firebase/auth';
+import {
+  getFirestore,
+  doc,
+  addDoc,
+  onSnapshot,
+  collection,
+  serverTimestamp
 } from 'firebase/firestore';
 
-import Dashboard from './pages/Dashboard';
+// ✅ Internal Components & Pages
+import PlaceholderCard from './components/PlaceholderCard';
 import TripPlanner from './components/TripPlanner';
+import Dashboard from './pages/Dashboard';
+import FleetAnalytics from './pages/FleetAnalytics';
+import TripCompare from './pages/TripCompare';
+import FleetHealth from './pages/FleetHealth';
+
 
 // ✅ CONFIGURATION
 const FIREBASE_CONFIG = {
@@ -112,6 +131,9 @@ const App = () => {
             onTripSelect={handleTripSelect}
           />
         );
+
+      case 'fleet-health':
+          return <FleetHealth />;
   
       case 'maintenance':
         return (
@@ -120,17 +142,20 @@ const App = () => {
             setVehicle={setVehicle}
           />
         );
-  
-        case 'details':
-          return selectedTrip ? (
-            <Dashboard trip={selectedTrip} />
-          ) : (
-            <div className="p-6 text-gray-500">
-              No trip selected. Choose one from <strong>My Trips</strong>.
-            </div>
-          );
-        
-  
+      case 'analytics':
+        return <FleetAnalytics />;
+      case 'compare':
+        return <TripCompare />;
+
+      case 'details':
+        return selectedTrip ? (
+          <Dashboard trip={selectedTrip} />
+        ) : (
+          <div className="p-6 text-gray-500">
+            No trip selected. Choose one from <strong>My Trips</strong>.
+          </div>
+        );
+
       default:
         return (
           <div className="p-6">
@@ -168,6 +193,9 @@ const Sidebar = ({ activeView, setActiveView }) => (
       <NavButton view="planner" label="New Trip" icon={<Plus />} activeView={activeView} onClick={setActiveView} />
       <NavButton view="my-trips" label="My Trips" icon={<ListChecks />} activeView={activeView} onClick={setActiveView} />
       <NavButton view="maintenance" label="Maintenance" icon={<Wrench />} activeView={activeView} onClick={setActiveView} />
+      <NavButton view="analytics" label="Fleet Analytics" icon={<BarChart2 />} activeView={activeView} onClick={setActiveView} />
+      <NavButton view="compare" label="Compare Trips" icon={<TrendingUp />} activeView={activeView} onClick={setActiveView} />
+      <NavButton view="fleet-health" label="Fleet Health" icon={<ShieldCheck />} activeView={activeView} onClick={setActiveView} />
     </nav>
   </aside>
 );

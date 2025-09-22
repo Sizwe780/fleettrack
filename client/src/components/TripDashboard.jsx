@@ -1,117 +1,72 @@
 import React from 'react';
-import TripInsights from './TripInsights';
+import { MapPin, DollarSign, Clock, CheckCircle, Fuel } from 'lucide-react';
 import TripMap from './TripMap';
-import TripFeedback from './TripFeedback';
-import useUserRole from '../hooks/useUserRole';
-import { exportTripToPDF } from '../utils/exportTripData';
-import AdminControls from './AdminControls';
+import KPIBadge from './KPIBadge';
 
-const TripDashboard = ({ trip }) => {
-  if (!trip) return <p>No trip data available.</p>;
+const TripDashboard = ({ trip, onSelect, isSelected }) => {
+  if (!trip) return null;
 
   const {
-    origin,
-    destination,
-    cycleUsed,
-    driver_name,
-    date,
-    routeData,
-    analysis,
+    origin = 'Unknown Origin',
+    destination = 'Unknown Destination',
+    date = 'Unknown Date',
+    driver_name = 'Unassigned',
+    analysis = {},
+    coordinates = []
   } = trip;
 
+  const revenue = analysis?.profitability?.revenue ?? 0;
   const profit = analysis?.profitability?.netProfit ?? 0;
+  const distance = analysis?.profitability?.distanceMiles ?? 0;
   const fuelUsed = analysis?.ifta?.fuelUsed ?? 0;
-  const distance = routeData?.distance ?? 0;
-  const costs = analysis?.profitability?.costs ?? {};
-  const remarks = analysis?.remarks ?? '';
 
-  const fuelEfficiency =
-    distance && fuelUsed
-      ? `${(fuelUsed / distance * 100).toFixed(2)} L/100km`
-      : 'N/A';
-
-  const role = useUserRole();
+  const formattedDate = new Date(date).toLocaleDateString('en-ZA', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  });
 
   return (
-    <div className="space-y-6 p-6 bg-white rounded-xl shadow-md border">
-      {/* Trip Summary */}
-      <div className="text-xl font-semibold">
-        🚚 {origin} → {destination}
-      </div>
-      <div className="text-sm text-gray-600">
-        Driver: {driver_name} | Date: {date} | Cycle Time: {cycleUsed} hrs
-      </div>
-
-      {/* Profit & Fuel */}
-      <div className="grid grid-cols-2 gap-4 mt-4">
-        <div className="bg-green-100 p-4 rounded-md">
-          <h3 className="text-lg font-bold">💰 Profit</h3>
-          <p className="text-2xl text-green-700">R{profit}</p>
-        </div>
-        <div className="bg-blue-100 p-4 rounded-md">
-          <h3 className="text-lg font-bold">⛽ Fuel Efficiency</h3>
-          <p className="text-2xl text-blue-700">{fuelEfficiency}</p>
-        </div>
-      </div>
-
-      {/* Cost Breakdown */}
-      <div className="mt-6">
-        <h3 className="text-lg font-bold mb-2">📊 Cost Breakdown</h3>
-        <ul className="list-disc list-inside text-gray-700">
-          {Object.entries(costs).map(([key, value]) => (
-            <li key={key}>
-              {key}: R{value}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* Route Stats */}
-      <div className="mt-6">
-        <h3 className="text-lg font-bold mb-2">🧭 Route Stats</h3>
-        <p>Distance: {distance} km</p>
-        <p>Average Speed: {routeData?.avgSpeed ?? 'N/A'} km/h</p>
-      </div>
-
-      {/* Remarks */}
-      {remarks && (
-        <div className="mt-6 bg-yellow-100 p-4 rounded-md">
-          <h3 className="text-lg font-bold">⚠️ Remarks</h3>
-          <p>{remarks}</p>
-        </div>
-      )}
-
-      {/* Predictive Insights */}
-      <TripInsights trip={trip} />
-
-      {/* Route Map */}
-      <TripMap routeData={routeData} />
-
-      {/* Feedback Form */}
-      <TripFeedback tripId={trip.id} />
-
-      {/* Export Button */}
-      <div className="mt-4">
+    <div
+      className={`bg-white p-4 rounded-xl shadow-md border transition ${
+        isSelected ? 'ring-2 ring-blue-500' : 'hover:shadow-lg'
+      }`}
+    >
+      {/* Header */}
+      <div className="flex justify-between items-center mb-2">
+        <h3 className="text-xl font-bold">
+          {origin} → {destination}
+        </h3>
         <button
-          onClick={() => exportTripToPDF(trip)}
-          className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700"
+          onClick={onSelect}
+          className={`px-3 py-1 text-sm rounded ${
+            isSelected ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+          }`}
         >
-          📄 Export Trip Summary (PDF)
+          {isSelected ? 'Selected' : 'Compare'}
         </button>
       </div>
 
-      {/* KPI Alerts */}
-      <div className="mt-4 space-y-2">
-        {fuelEfficiency !== 'N/A' && parseFloat(fuelEfficiency) > 15 && (
-          <div className="text-red-600 font-bold">⚠️ High Fuel Usage</div>
-        )}
-        {profit > 10000 && (
-          <div className="text-green-600 font-bold">✅ High Profit Margin</div>
-        )}
+      {/* KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
+        <KPIBadge label="Distance" value={`${distance} mi`} status="good" />
+        <KPIBadge label="Fuel Used" value={`${fuelUsed} L`} status="warn" />
+        <KPIBadge label="Profit" value={`R${profit.toFixed(2)}`} status="good" />
+        <KPIBadge label="Revenue" value={`R${revenue.toFixed(2)}`} status="neutral" />
       </div>
 
-      {/* Admin Controls */}
-      {role === 'admin' && <AdminControls trip={trip} />}
+      {/* Metadata */}
+      <p className="text-gray-600 mb-1 flex items-center gap-2">
+        <Clock className="w-4 h-4" />
+        {formattedDate}
+      </p>
+      <p className="text-gray-600 mb-1 flex items-center gap-2">
+        <MapPin className="w-4 h-4" />
+        Driver: {driver_name}
+      </p>
+
+      {/* Map Preview */}
+      <TripMap routeData={{ coordinates, driver: driver_name, origin, destination, distance }} />
     </div>
   );
 };
