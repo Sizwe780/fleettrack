@@ -100,6 +100,8 @@ const App = () => {
                 const profileDoc = await getDoc(profileDocRef);
                 if (profileDoc.exists()) {
                     setProfileData(profileDoc.data());
+                } else {
+                     setProfileData({ driverName: '', vehicleNumber: '', homeTerminal: '' });
                 }
             } catch (error) {
                 console.error("Error fetching profile:", error);
