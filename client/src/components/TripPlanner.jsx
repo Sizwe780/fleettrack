@@ -46,14 +46,18 @@ const TripPlanner = ({ userId, onTripCreated }) => {
         driver_name: newTripData.driver_name,
         date: newTripData.date,
         departureTime: newTripData.departureTime,
-        routeData: newTripData.routeData,
+        routeData: deepFlatten(newTripData.routeData),
         analysis: {
-          profitability: newTripData.analysis?.profitability ?? {},
-          ifta: newTripData.analysis?.ifta ?? {},
+          profitability: deepFlatten(newTripData.analysis?.profitability ?? {}),
+          ifta: deepFlatten(newTripData.analysis?.ifta ?? {}),
           remarks: newTripData.analysis?.remarks ?? '',
           dailyLogs: sanitizedLogs,
         },
       };
+
+      // 🔒 Final check for nested arrays
+      const hasNestedArray = JSON.stringify(safeTripData).includes('[[');
+      if (hasNestedArray) throw new Error('Nested arrays detected. Firestore will reject this payload.');
 
       const docRef = await addDoc(collection(db, tripsPath), safeTripData);
       onTripCreated({ id: docRef.id, ...safeTripData });
