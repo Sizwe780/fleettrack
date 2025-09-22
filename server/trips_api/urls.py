@@ -1,6 +1,6 @@
 from django.urls import path
-from .views import TripPlannerView
+from . import views
 
 urlpatterns = [
-    path('plan-trip/', TripPlannerView.as_view(), name='plan_trip'),
+    path('api/calculate_trip/', views.calculate_trip, name='calculate_trip'),
 ]
