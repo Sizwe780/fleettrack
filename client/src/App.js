@@ -86,10 +86,17 @@ const App = () => {
   useEffect(() => {
     if (!userId) return;
     const tripsPath = `apps/${appId}/users/${userId}/trips`;
-    const unsubscribe = onSnapshot(collection(db, tripsPath), snapshot => {
-      setTrips(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setIsLoading(false);
-    });
+    const unsubscribe = onSnapshot(
+      collection(db, tripsPath),
+      snapshot => {
+        setTrips(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setIsLoading(false);
+      },
+      error => {
+        console.error('Snapshot error:', error);
+        setIsLoading(false); // Prevents infinite loading loop
+      }
+    );
     return unsubscribe;
   }, [userId]);
 
@@ -481,23 +488,38 @@ function analyzeTrip(routeData, currentCycleUsed) {
   const durationHours = routeData.duration / 3600;
 
   return {
-    distanceMiles, durationHours,
+    distanceMiles,
+    durationHours,
     remarks: [
       `Trip is ~${distanceMiles.toFixed(0)} miles and will require ${durationHours.toFixed(1)} hours of driving.`,
       `Day 1: Max 11 hours driving within a 14-hour on-duty window.`,
       `A 30-minute break is mandatory after 8 cumulative hours of driving.`,
       `A 10-hour off-duty break is required at the end of the day.`
     ],
-    dailyLogs: [{
-      day: 1, segments: [{ status: 'On Duty', duration: 1 }, { status: 'Driving', duration: 5.5 }, { status: 'Off Duty', duration: 0.5 }, { status: 'Driving', duration: 5.5 }, { status: 'On Duty', duration: 1 }, { status: 'Off Duty', duration: 10 }]
-    }],
+    // ✅ Flattened structure—no nested arrays
+    dailyLogs: [
+      { day: 1, status: 'On Duty', duration: 1 },
+      { day: 1, status: 'Driving', duration: 5.5 },
+      { day: 1, status: 'Off Duty', duration: 0.5 },
+      { day: 1, status: 'Driving', duration: 5.5 },
+      { day: 1, status: 'On Duty', duration: 1 },
+      { day: 1, status: 'Off Duty', duration: 10 }
+    ],
     profitability: {
-      inputs: { ratePerMile: 3.50, fuelMpg: 6.5, fuelPrice: 3.89 },
-      distanceMiles, otherCosts: 125,
+      inputs: {
+        ratePerMile: 3.50,
+        fuelMpg: 6.5,
+        fuelPrice: 3.89
+      },
+      distanceMiles,
+      otherCosts: 125
     },
     ifta: {
       estimatedTax: '$95.20',
-      milesByState: [{ state: 'Eastern Cape', miles: 250 }, { state: 'Western Cape', miles: 465 }]
+      milesByState: [
+        { state: 'Eastern Cape', miles: 250 },
+        { state: 'Western Cape', miles: 465 }
+      ]
     }
   };
 }

@@ -1,37 +1,37 @@
 import React, { useState } from 'react';
 import { getAuth, signOut } from 'firebase/auth';
-import { useRouter } from 'next/router';
+import { useNavigate, Link } from 'react-router-dom';
 
 const SidebarLayout = ({ children, role, title = 'Dashboard' }) => {
   const [collapsed, setCollapsed] = useState(false);
-  const router = useRouter();
+  const navigate = useNavigate();
 
   const handleLogout = async () => {
     await signOut(getAuth());
-    router.push('/login');
+    navigate('/login');
   };
 
   const navLinks = [
-    { label: 'Dashboard', href: '/' },
+    { label: 'Dashboard', to: '/' },
     ...(role === 'driver'
       ? [
-          { label: 'Driver Performance', href: '/driverPerformance' },
-          { label: 'Trip History', href: '/driverHistory' },
-          { label: 'Driver Settings', href: '/driverSettings' },
-          { label: 'Upload Proof', href: '/driverUpload' },
-          { label: 'Driver Alerts', href: '/driverAlerts' },
-          { label: 'Driver Leaderboard', href: '/driverLeaderboard' },
-          { label: 'Driver Chat', href: '/driverChat' }
+          { label: 'Driver Performance', to: '/driverPerformance' },
+          { label: 'Trip History', to: '/driverHistory' },
+          { label: 'Driver Settings', to: '/driverSettings' },
+          { label: 'Upload Proof', to: '/driverUpload' },
+          { label: 'Driver Alerts', to: '/driverAlerts' },
+          { label: 'Driver Leaderboard', to: '/driverLeaderboard' },
+          { label: 'Driver Chat', to: '/driverChat' }
         ]
       : []),
     ...(role === 'admin' || role === 'analyst'
       ? [
-          { label: 'Analytics', href: '/analytics' },
-          { label: 'Manage Trips', href: '/manageTrips' },
-          { label: 'Assign Trip', href: '/assignTrip' },
-          { label: 'Audit Logs', href: '/auditLogs' },
-          { label: 'Fleet Risk', href: '/fleetRisk' },
-          { label: 'Predictive Maintenance', href: '/predictiveMaintenance' }
+          { label: 'Analytics', to: '/analytics' },
+          { label: 'Manage Trips', to: '/manageTrips' },
+          { label: 'Assign Trip', to: '/assignTrip' },
+          { label: 'Audit Logs', to: '/auditLogs' },
+          { label: 'Fleet Risk', to: '/fleetRisk' },
+          { label: 'Predictive Maintenance', to: '/predictiveMaintenance' }
         ]
       : [])
   ];
@@ -43,13 +43,13 @@ const SidebarLayout = ({ children, role, title = 'Dashboard' }) => {
         <div className="p-4 font-bold text-lg text-blue-600">FleetTrack</div>
         <nav className="space-y-2 px-2">
           {navLinks.map(link => (
-            <a
-              key={link.href}
-              href={link.href}
+            <Link
+              key={link.to}
+              to={link.to}
               className="block px-3 py-2 text-sm text-gray-700 rounded hover:bg-gray-100"
             >
               {collapsed ? link.label.charAt(0) : link.label}
-            </a>
+            </Link>
           ))}
         </nav>
       </div>
