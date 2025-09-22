@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, addDoc, onSnapshot, collection, setDoc, getDoc } from 'firebase/firestore';
-import { Truck, MapPin, Calendar, Gauge, Info, CheckCircle, XCircle, Locate, Loader, ListChecks, TrendingUp, Fuel, Bed, ClipboardPenLine, User, Home, BookA } from 'lucide-react';
+import { Truck, MapPin, Calendar, Gauge, Info, CheckCircle, XCircle, Locate, Loader, ListChecks, TrendingUp, User, ClipboardPenLine, BookA } from 'lucide-react';
 import { createRoot } from 'react-dom/client';
 
 // Main App component
@@ -46,7 +46,18 @@ const App = () => {
         const initFirebase = async () => {
             try {
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                const firebaseConfigString = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+                const firebaseConfig = JSON.parse(firebaseConfigString);
+
+                // Check for a valid API key to prevent initialization errors
+                if (!firebaseConfig.apiKey) {
+                    console.error("Firebase Initialization Failed: Missing or invalid API key in configuration.");
+                    setMessage("Failed to initialize Firebase. API key is missing.");
+                    setMessageType('error');
+                    setProfileIsLoading(false);
+                    return;
+                }
+
                 const app = initializeApp(firebaseConfig);
                 const authInstance = getAuth(app);
                 const dbInstance = getFirestore(app);
@@ -127,7 +138,7 @@ const App = () => {
             mapInstance.current = map;
             map.addControl(new window.mapboxgl.NavigationControl(), 'bottom-right');
             map.addControl(new window.mapboxgl.FullscreenControl(), 'bottom-right');
-            
+
             // Cleanup function
             return () => {
                 if (mapInstance.current) {
@@ -254,12 +265,12 @@ const App = () => {
 
         while (remainingHours > 0) {
             let daySchedule = { offDuty: 0, sleeper: 0, driving: 0, onDuty: 0 };
-            
+
             // 11-hour driving limit
             let maxDrivingToday = Math.min(11, remainingHours);
             // 14-hour on-duty limit
-            let maxOnDutyToday = 14; 
-            
+            let maxOnDutyToday = 14;
+
             // 70-hour/8-day cycle
             if (days > 1) { // 34-hour restart after a full day
                 if (remainingCycle <= 0) {
@@ -267,13 +278,13 @@ const App = () => {
                 }
             }
             maxDrivingToday = Math.min(maxDrivingToday, remainingCycle);
-            
+
             let driving = maxDrivingToday;
             let onDuty = 1; // 1 hour for pre/post trip
             if (driving > 8) {
                 onDuty += 0.5; // 30-minute break
             }
-            
+
             if (driving + onDuty > maxOnDutyToday) {
                 const excess = (driving + onDuty) - maxOnDutyToday;
                 driving -= excess;
@@ -283,10 +294,10 @@ const App = () => {
             daySchedule.driving = driving;
             daySchedule.onDuty = onDuty;
             daySchedule.offDuty = 24 - (driving + onDuty);
-            
+
             remainingHours -= driving;
             remainingCycle -= driving;
-            
+
             schedule.push(daySchedule);
             days++;
         }
@@ -458,12 +469,12 @@ const App = () => {
         ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 1.5 * statusHeight);
         currentTime += schedule.sleeper || 0;
         ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 1.5 * statusHeight);
-        
+
         // Draw Driving
         ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 2.5 * statusHeight);
         currentTime += schedule.driving || 0;
         ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 2.5 * statusHeight);
-        
+
         // Draw On Duty
         ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 3.5 * statusHeight);
         currentTime += schedule.onDuty || 0;
