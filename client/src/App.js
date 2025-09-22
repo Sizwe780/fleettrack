@@ -11,6 +11,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import {
   getFirestore, doc, addDoc, onSnapshot, collection, serverTimestamp
 } from 'firebase/firestore';
+import { auth, db, storage } from "./firebase";
 
 // --- CONFIGURATION ---
 const FIREBASE_CONFIG = { /* PASTE YOUR FIREBASE CONFIG HERE */ };

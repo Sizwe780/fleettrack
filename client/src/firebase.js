@@ -4,19 +4,16 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.REACT_APP_FIREBASE_APP_ID,
-  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID,
+  apiKey: "AIzaSyAla1ZaxyeLc9WBDvKbAS8I9hUZnxIWxPg",
+  authDomain: "fleettrack-84eb6.firebaseapp.com",
+  projectId: "fleettrack-84eb6",
+  storageBucket: "fleettrack-84eb6.appspot.com", // ✅ override here
+  messagingSenderId: "918797565578",
+  appId: "1:918797565578:web:8c8ee2b227057e21cbf773",
+  measurementId: "G-EQT2H5SQ4V"
 };
 
-// ✅ Log config before initializing
-console.log("🔥 Firebase Config:", firebaseConfig);
-
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
