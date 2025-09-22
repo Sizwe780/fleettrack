@@ -12,7 +12,6 @@ import {
   getFirestore, doc, addDoc, onSnapshot, collection, serverTimestamp
 } from 'firebase/firestore';
 
-const [selectedTrip, setSelectedTrip] = useState(null);
 // --- CONFIGURATION ---
 const FIREBASE_CONFIG = { /* PASTE YOUR FIREBASE CONFIG HERE */ };
 const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2U3OCIsImEiOiJjbWZncWkwZnIwNDBtMmtxd3BkeXVtYjZzIn0.niS9m5pCbK5Kv-_On2mTcg';
@@ -25,10 +24,10 @@ const appId = 'fleet-track-app';
 
 // --- MAIN APP COMPONENT ---
 const App = () => {
+  const [selectedTrip, setSelectedTrip] = useState(null);
   const [activeView, setActiveView] = useState('dashboard');
   const [userId, setUserId] = useState(null);
   const [trips, setTrips] = useState([]);
-  const [selectedTrip, setSelectedTrip] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // This state would be part of a larger user/vehicle context
