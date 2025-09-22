@@ -6,7 +6,7 @@ import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { db, messaging } from '../firebase';
 import { getToken } from 'firebase/messaging';
-import { getOptimalRoute } from '../utils/routeOptimizer';
+import getOptimalRoute from '../utils/routeOptimizer';
 
 const Dashboard = () => {
   const [trips, setTrips] = useState([]);
