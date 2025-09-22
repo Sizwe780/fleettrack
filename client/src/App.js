@@ -1,17 +1,23 @@
+// --- MODULE IMPORTS ---
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Map, { Source, Layer, Marker } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { Truck, MapPin, DollarSign, UploadCloud, ShieldCheck, FileText, Plus, Home, ListChecks, Loader, Car, Star, Fuel, TrendingUp, BarChart2, Wrench, Trash2 } from 'lucide-react';
+import {
+  Truck, MapPin, DollarSign, UploadCloud, ShieldCheck, FileText, Plus,
+  Home, ListChecks, Loader, Car, Star, Fuel, TrendingUp, BarChart2, Wrench, Trash2
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import {
+  getFirestore, doc, addDoc, onSnapshot, collection, serverTimestamp
+} from 'firebase/firestore';
 
+const [selectedTrip, setSelectedTrip] = useState(null);
 // --- CONFIGURATION ---
 const FIREBASE_CONFIG = { /* PASTE YOUR FIREBASE CONFIG HERE */ };
 const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2U3OCIsImEiOiJjbWZncWkwZnIwNDBtMmtxd3BkeXVtYjZzIn0.niS9m5pCbK5Kv-_On2mTcg';
 
-// --- FIREBASE INITIALIZATION (for real-time listening) ---
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, addDoc, onSnapshot, collection, serverTimestamp } from 'firebase/firestore';
-
+// --- FIREBASE INITIALIZATION ---
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -41,8 +47,20 @@ const App = () => {
   });
 
   useEffect(() => {
-    onAuthStateChanged(auth, user => user ? setUserId(user.uid) : signInAnonymously(auth));
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setUserId(user.uid);
+        const userRef = doc(db, 'users', user.uid);
+        const snap = await getDoc(userRef);
+        if (snap.exists()) {
+          setUserRole(snap.data().role);
+        }
+      } else {
+        signInAnonymously(auth);
+      }
+    });
   }, []);
+  
 
   useEffect(() => {
     if (!userId) return;
@@ -165,6 +183,8 @@ const TripPlanner = ({ userId, onTripCreated }) => {
     );
 };
 
+const [userRole, setUserRole] = useState(null);
+
 const TripList = ({ trips, onTripSelect }) => (
     <div>
         <h1 className="text-3xl font-bold mb-6">My Trips</h1>
@@ -195,6 +215,10 @@ const TripDetails = ({ trip }) => {
         </div>
     );
 };
+
+{selectedTrip && (
+  <TripInsights trip={selectedTrip} onClose={() => setSelectedTrip(null)} />
+)}
 
 const MaintenanceTracker = ({ vehicle, setVehicle }) => {
     const [newEvent, setNewEvent] = useState({ event: 'Oil Change', mileage: vehicle.odometer });

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { callTripAnalysis } from '../utils/callTripAnalysis';
+
 
 
 function TripForm() {
@@ -22,8 +24,11 @@ function TripForm() {
     );
   }, []);
 
+  
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+  
     const tripData = {
       origin,
       destination,
@@ -32,9 +37,27 @@ function TripForm() {
       current_location: currentLocation,
       cycle_used: Number(cycleUsed),
       departure_time: departureTime,
+      ratePerMile: 3.5,
+      fuelMpg: 6.5,
+      fuelPrice: 3.89,
+      otherCosts: 125
     };
+  
     try {
-      await axios.post(`${process.env.REACT_APP_API_URL}/api/trips/`, tripData);
+      // Step 1: Get full trip analysis from Django
+      const analysisRes = await axios.post(`${process.env.REACT_APP_API_URL}/api/calculate-trip/`, tripData);
+      const analysis = analysisRes.data;
+  
+      // Step 2: Save full trip to your backend or Firebase
+      const fullTrip = {
+        ...tripData,
+        analysis,
+        createdAt: new Date().toISOString()
+      };
+  
+      await axios.post(`${process.env.REACT_APP_API_URL}/api/trips/`, fullTrip);
+  
+      // Step 3: Reset form
       setOrigin('');
       setDestination('');
       setDate('');
@@ -42,13 +65,14 @@ function TripForm() {
       setCurrentLocation('');
       setCycleUsed('');
       setDepartureTime('');
-      alert('Trip submitted successfully!');
+  
+      alert('Trip submitted and analyzed successfully!');
     } catch (error) {
       console.error('Submission failed:', error.response?.data || error.message);
       alert('Failed to submit trip.');
     }
   };
-
+  
   return (
     <div className="home-container">
       <div className="form-container">
