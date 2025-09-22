@@ -121,14 +121,15 @@ const App = () => {
           />
         );
   
-      case 'details':
-        return selectedTrip ? (
-          <TripDetails trip={selectedTrip} />
-        ) : (
-          <div className="p-6 text-gray-500">
-            No trip selected. Choose one from <strong>My Trips</strong>.
-          </div>
-        );
+        case 'details':
+          return selectedTrip ? (
+            <Dashboard trip={selectedTrip} />
+          ) : (
+            <div className="p-6 text-gray-500">
+              No trip selected. Choose one from <strong>My Trips</strong>.
+            </div>
+          );
+        
   
       default:
         return (

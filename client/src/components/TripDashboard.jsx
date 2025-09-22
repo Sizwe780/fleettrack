@@ -19,10 +19,9 @@ const TripDashboard = ({ trip }) => {
   const costs = analysis?.profitability?.costs ?? {};
   const remarks = analysis?.remarks ?? '';
 
-  const fuelEfficiency =
-    distance && fuelUsed
-      ? `${(fuelUsed / distance * 100).toFixed(2)} L/100km`
-      : 'N/A';
+  const fuelEfficiency = distance && fuelUsed
+    ? `${(fuelUsed / distance * 100).toFixed(2)} L/100km`
+    : 'N/A';
 
   return (
     <div className="space-y-6 p-6 bg-white rounded-xl shadow-md border">
@@ -76,12 +75,4 @@ const TripDashboard = ({ trip }) => {
   );
 };
 
-const Dashboard = ({ trip }) => {
-  return (
-    <div className="max-w-4xl mx-auto mt-10">
-      <TripDashboard trip={trip} />
-    </div>
-  );
-};
-
-export default Dashboard;
+export default TripDashboard;
