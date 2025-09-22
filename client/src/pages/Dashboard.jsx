@@ -1,22 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import TripDashboard from '../components/TripDashboard'; // adjust path if needed
-import { collection, getDocs } from 'firebase/firestore';
+import TripDashboard from '../components/TripDashboard';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import { db } from '../firebase';
 
 const Dashboard = () => {
   const [trips, setTrips] = useState([]);
+  const [role, setRole] = useState(null);
   const [driverFilter, setDriverFilter] = useState('');
   const [minProfit, setMinProfit] = useState(0);
   const [maxFuel, setMaxFuel] = useState(9999);
   const [sortBy, setSortBy] = useState('date');
 
   useEffect(() => {
-    const fetchTrips = async () => {
+    const fetchUserRoleAndTrips = async () => {
+      const auth = getAuth();
+      const user = auth.currentUser;
+      if (!user) return;
+
+      // Fetch role
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+      const userRole = userSnap.exists() ? userSnap.data().role : 'driver';
+      setRole(userRole);
+
+      // Fetch trips
       const snapshot = await getDocs(collection(db, 'trips'));
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setTrips(data);
+      const allTrips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Filter for drivers
+      const visibleTrips = userRole === 'driver'
+        ? allTrips.filter(t => t.driver_uid === user.uid)
+        : allTrips;
+
+      setTrips(visibleTrips);
     };
-    fetchTrips();
+
+    fetchUserRoleAndTrips();
   }, []);
 
   const filteredTrips = trips
