@@ -7,37 +7,51 @@ import HealthScoreChart from './HealthScoreChart';
 export default function FleetAnalytics() {
   const [fuelData, setFuelData] = useState([]);
   const [scoreData, setScoreData] = useState([]);
+  const [loading, setLoading] = useState(true);
 
+  // This useEffect hook will run once when the component is mounted
   useEffect(() => {
-    const fetchTrips = async () => {
-      const snapshot = await getDocs(collection(db, 'trips'));
-      const trips = snapshot.docs.map(doc => doc.data());
+    const fetchData = async () => {
+      try {
+        // Fetch all trip documents from the 'trips' collection
+        const querySnapshot = await getDocs(collection(db, 'trips'));
+        const trips = querySnapshot.docs.map(doc => doc.data());
 
-      const fuelTrend = {};
-      const scoreBuckets = { '0-49': 0, '50-79': 0, '80-100': 0 };
+        // Process the fetched data to populate your charts
+        // This is a placeholder for your data processing logic
+        const processedFuelData = trips.map(trip => ({
+          date: trip.date,
+          fuelUsed: trip.analysis?.ifta?.fuelUsed ?? 0,
+        }));
+        
+        const processedScoreData = trips.map(trip => ({
+          date: trip.date,
+          healthScore: trip.healthScore ?? 0,
+        }));
 
-      trips.forEach(trip => {
-        const date = new Date(trip.date).toLocaleDateString('en-ZA', { month: 'short', year: 'numeric' });
-        fuelTrend[date] = (fuelTrend[date] || 0) + (trip.analysis?.ifta?.fuelUsed ?? 0);
-
-        const score = trip.healthScore ?? 100;
-        if (score < 50) scoreBuckets['0-49']++;
-        else if (score < 80) scoreBuckets['50-79']++;
-        else scoreBuckets['80-100']++;
-      });
-
-      setFuelData(Object.entries(fuelTrend).map(([label, value]) => ({ label, value })));
-      setScoreData(Object.entries(scoreBuckets).map(([range, count]) => ({ range, count })));
+        setFuelData(processedFuelData);
+        setScoreData(processedScoreData);
+      } catch (error) {
+        console.error("Error fetching data: ", error);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    fetchTrips();
-  }, []);
+    fetchData();
+  }, []); // The empty array ensures this effect runs only once
+
+  if (loading) {
+    return <div>Loading analytics...</div>;
+  }
 
   return (
-    <div className="max-w-5xl mx-auto mt-10 space-y-6">
-      <h2 className="text-2xl font-bold">📊 Fleet Analytics</h2>
-      <FuelTrendChart data={fuelData} />
-      <HealthScoreChart data={scoreData} />
+    <div>
+      <h1 className="text-2xl font-bold mb-4">Fleet Analytics</h1>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <FuelTrendChart data={fuelData} />
+        <HealthScoreChart data={scoreData} />
+      </div>
     </div>
   );
 }
