@@ -1,9 +1,16 @@
 import React from 'react';
-import { MapPin, Clock } from 'lucide-react';
+import { MapPin, Clock, WifiOff, Route } from 'lucide-react';
 import TripMap from './TripMap';
 import KPIBadge from './KPIBadge';
 
-const TripDashboard = ({ trip, onSelect, isSelected, onComplete }) => {
+const TripDashboard = ({
+  trip,
+  onSelect,
+  isSelected,
+  onComplete,
+  isOffline = false,
+  routeSuggestion
+}) => {
   if (!trip) return null;
 
   const {
@@ -14,7 +21,10 @@ const TripDashboard = ({ trip, onSelect, isSelected, onComplete }) => {
     analysis = {},
     coordinates = [],
     healthScore = null,
-    status = 'pending'
+    status = 'pending',
+    breakTaken = true,
+    remarks = [],
+    completedAt = null
   } = trip;
 
   const revenue = analysis?.profitability?.revenue ?? 0;
@@ -40,7 +50,7 @@ const TripDashboard = ({ trip, onSelect, isSelected, onComplete }) => {
 
     if (status === 'completed') color = 'bg-green-100 text-green-700';
     else if (status === 'flagged') color = 'bg-yellow-100 text-yellow-700';
-    else if (status === 'critical' || healthScore < 50) {
+    else if (status === 'critical' || healthScore < 50 || !breakTaken) {
       label = 'Critical';
       color = 'bg-red-100 text-red-700';
     }
@@ -65,6 +75,11 @@ const TripDashboard = ({ trip, onSelect, isSelected, onComplete }) => {
         </h3>
         <div className="flex items-center gap-2">
           {getStatusBadge()}
+          {isOffline && (
+            <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+              <WifiOff className="w-4 h-4" /> Offline
+            </span>
+          )}
           <button
             onClick={onSelect}
             className={`px-3 py-1 text-sm rounded ${
@@ -82,6 +97,14 @@ const TripDashboard = ({ trip, onSelect, isSelected, onComplete }) => {
           <span className={`inline-block px-2 py-1 text-xs rounded ${getHealthColor(healthScore)}`}>
             Health Score: {healthScore}/100
           </span>
+        </div>
+      )}
+
+      {/* Route Suggestion */}
+      {routeSuggestion && (
+        <div className="mb-2 text-sm text-blue-700 flex items-center gap-2">
+          <Route className="w-4 h-4" />
+          Suggested Route: {routeSuggestion.bestRoute} ({routeSuggestion.avgDuration} hrs avg)
         </div>
       )}
 
@@ -103,18 +126,54 @@ const TripDashboard = ({ trip, onSelect, isSelected, onComplete }) => {
         Driver: {driver_name}
       </p>
 
+      {/* Completion Timestamp */}
+      {status === 'completed' && completedAt && (
+        <p className="text-gray-600 mb-1 text-xs">
+          Completed on:{' '}
+          {new Date(completedAt).toLocaleDateString('en-ZA', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}
+        </p>
+      )}
+
+      {/* Remarks */}
+      {remarks.length > 0 && (
+        <details className="mb-2 text-sm text-gray-700">
+          <summary className="cursor-pointer font-medium">Trip Remarks</summary>
+          <ul className="list-disc ml-4 mt-1">
+            {remarks.map((r, i) => (
+              <li key={i}>{r}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+
       {/* Map Preview */}
-      <TripMap routeData={{ coordinates, driver: driver_name, origin, destination, distance }} />
+      <TripMap
+        routeData={{
+          coordinates,
+          driver: driver_name,
+          origin,
+          destination,
+          distance
+        }}
+      />
 
       {/* Complete Trip Button */}
-      <div className="mt-4">
-        <button
-          onClick={() => onComplete(trip)}
-          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-        >
-          Complete Trip
-        </button>
-      </div>
+      {status !== 'completed' && (
+        <div className="mt-4">
+          <button
+            onClick={() => onComplete(trip)}
+            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+          >
+            Complete Trip
+          </button>
+        </div>
+      )}
     </div>
   );
 };

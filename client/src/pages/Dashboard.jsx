@@ -6,6 +6,7 @@ import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { db, messaging } from '../firebase';
 import { getToken } from 'firebase/messaging';
+import { getOptimalRoute } from '../utils/routeOptimizer';
 
 const Dashboard = () => {
   const [trips, setTrips] = useState([]);
@@ -92,7 +93,10 @@ const Dashboard = () => {
 
       const result = await res.json();
       if (result.success) {
-        await setDoc(doc(db, 'trips', trip.id), { status: 'completed' }, { merge: true });
+        await setDoc(doc(db, 'trips', trip.id), {
+          status: 'completed',
+          completedAt: new Date().toISOString()
+        }, { merge: true });
       } else {
         console.error('Trip completion failed:', result.error);
       }
@@ -221,13 +225,21 @@ const Dashboard = () => {
               <h2 className="text-xl font-bold capitalize">
                 {group === 'critical' ? '🚨 Critical Trips' : `${group.charAt(0).toUpperCase() + group.slice(1)} Trips`}
               </h2>
-              {trips.map(trip => (
-                <TripDashboard
-                  key={trip.id}
-                  trip={trip}
-                  onComplete={handleCompleteTrip}
-                />
-              ))}
+              {trips.map(trip => {
+                const routeSuggestion = getOptimalRoute(trips, trip.origin, trip.destination);
+
+                return (
+                  <TripDashboard
+                    key={trip.id}
+                    trip={trip}
+                    onComplete={handleCompleteTrip}
+                    isOffline={!navigator.onLine}
+                    isSelected={false}
+                    onSelect={() => {}}
+                    routeSuggestion={routeSuggestion}
+                  />
+                );
+              })}
             </div>
           )
         ))}

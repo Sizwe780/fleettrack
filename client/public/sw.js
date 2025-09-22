@@ -1,21 +1,23 @@
-const CACHE_NAME = 'fleettrack-cache-v2';
+const CACHE_NAME = 'fleettrack-cache-v3';
 const urlsToCache = [
   '/',
   '/manifest.json',
   '/favicon.ico',
   '/logo192.png',
   '/logo512.png',
-  '/offline.html' // optional fallback page
+  '/offline.html',
+  '/create-trip',
+  '/dashboard'
 ];
 
-// Pre-cache static assets
+// 🔒 Pre-cache static assets
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
   );
 });
 
-// Clean up old caches
+// 🧹 Clean up old caches
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
@@ -30,11 +32,11 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Fetch handler
+// 🔁 Fetch handler
 self.addEventListener('fetch', event => {
   const { request } = event;
 
-  // Handle API requests (network-first)
+  // 🚚 API requests (network-first)
   if (request.url.includes('/trips')) {
     event.respondWith(
       fetch(request)
@@ -48,7 +50,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Handle navigation requests (optional offline fallback)
+  // 🧭 Navigation requests (offline fallback)
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).catch(() => caches.match('/offline.html'))
@@ -56,13 +58,13 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Default cache-first for static assets
+  // 📦 Static assets (cache-first)
   event.respondWith(
     caches.match(request).then(response => response || fetch(request))
   );
 });
 
-// Push notification handler
+// 🔔 Push notification handler
 self.addEventListener('push', event => {
   const data = event.data?.json() || {};
   self.registration.showNotification(data.title || 'FleetTrack Alert', {

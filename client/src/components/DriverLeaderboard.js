@@ -9,7 +9,6 @@ const DriverLeaderboard = () => {
   useEffect(() => {
     const fetchTrips = async () => {
       try {
-        // 🔥 Ensure Firestore rules allow access to 'trips' collection
         const snapshot = await getDocs(collection(db, 'trips'));
         const trips = snapshot.docs.map(doc => doc.data());
 
@@ -50,6 +49,12 @@ const DriverLeaderboard = () => {
     fetchTrips();
   }, []);
 
+  const getScoreColor = (score) => {
+    if (score >= 80) return 'text-green-600';
+    if (score >= 50) return 'text-yellow-600';
+    return 'text-red-600';
+  };
+
   return (
     <div className="max-w-3xl mx-auto mt-10 space-y-6">
       <h2 className="text-2xl font-bold">🏆 Driver Leaderboard</h2>
@@ -67,9 +72,13 @@ const DriverLeaderboard = () => {
             >
               <div>
                 <p className="font-bold">{i + 1}. {d.name}</p>
-                <p className="text-sm text-gray-500">Avg Score: {d.avgScore}/100</p>
+                <p className="text-sm text-gray-500">
+                  Avg Score: <span className={getScoreColor(d.avgScore)}>{d.avgScore}/100</span> · {d.count} trips
+                </p>
               </div>
-              <p className="text-blue-600 font-semibold">R{d.profit.toFixed(2)}</p>
+              <p className="text-blue-600 font-semibold">
+                R{d.profit.toFixed(2)}
+              </p>
             </div>
           ))}
         </div>

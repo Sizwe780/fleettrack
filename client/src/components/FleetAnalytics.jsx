@@ -2,32 +2,23 @@ import React, { useEffect, useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import FuelTrendChart from './FuelTrendChart';
-import HealthScoreChart from './HealthScoreChart';
 
 export default function FleetAnalytics() {
   const [fuelData, setFuelData] = useState([]);
-  const [scoreData, setScoreData] = useState([]);
 
   useEffect(() => {
     const fetchTrips = async () => {
       const snapshot = await getDocs(collection(db, 'trips'));
       const trips = snapshot.docs.map(doc => doc.data());
 
-      const fuelTrend = {};
-      const scoreBuckets = { '0-49': 0, '50-79': 0, '80-100': 0 };
-
-      trips.forEach(trip => {
+      const fuelTrend = trips.reduce((acc, trip) => {
         const date = new Date(trip.date).toLocaleDateString('en-ZA', { month: 'short', year: 'numeric' });
-        fuelTrend[date] = (fuelTrend[date] || 0) + (trip.analysis?.ifta?.fuelUsed ?? 0);
+        acc[date] = (acc[date] || 0) + (trip.analysis?.ifta?.fuelUsed ?? 0);
+        return acc;
+      }, {});
 
-        const score = trip.healthScore ?? 100;
-        if (score < 50) scoreBuckets['0-49']++;
-        else if (score < 80) scoreBuckets['50-79']++;
-        else scoreBuckets['80-100']++;
-      });
-
-      setFuelData(Object.entries(fuelTrend).map(([label, value]) => ({ label, value })));
-      setScoreData(Object.entries(scoreBuckets).map(([range, count]) => ({ range, count })));
+      const formatted = Object.entries(fuelTrend).map(([label, value]) => ({ label, value }));
+      setFuelData(formatted);
     };
 
     fetchTrips();
@@ -37,7 +28,7 @@ export default function FleetAnalytics() {
     <div className="max-w-5xl mx-auto mt-10 space-y-6">
       <h2 className="text-2xl font-bold">📊 Fleet Analytics</h2>
       <FuelTrendChart data={fuelData} />
-      <HealthScoreChart data={scoreData} />
+      {/* Add more charts here later */}
     </div>
   );
 }
