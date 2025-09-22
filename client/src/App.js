@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote, Fuel, Bed, Database, ListChecks, TrendingUp, Info, Car, FileText, Settings, BarChart2, Book, Plus, Home, Trash2 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, addDoc, onSnapshot, collection, query, orderBy, where, getDocs, setLogLevel, serverTimestamp, deleteDoc } from 'firebase/firestore';
+import { getFirestore, doc, addDoc, onSnapshot, collection, query, where, getDocs, setLogLevel, serverTimestamp, getDoc } from 'firebase/firestore';
+import { Truck, MapPin, Star, User, Clock, Calendar, Gauge, CheckCircle, XCircle, Locate, Loader, Printer, StickyNote, Fuel, Bed, Database, ListChecks, TrendingUp, Info, Car, FileText, Settings, BarChart2, Book, Plus, Home } from 'lucide-react';
+import { debounce } from 'lodash';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 
 // Define global variables provided by the environment
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
@@ -11,613 +14,563 @@ const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // Mapbox token from user's uploaded file
 const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2U3OCIsImEiOiJjbWZncWkwZnIwNDBtMmtxd3BkeXVtYjZzIn0.niS9m5pCbK5Kv-_On2mTcg';
+mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
 
-const App = () => {
-    const [currentPage, setCurrentPage] = useState('dashboard');
-    const [trips, setTrips] = useState([]);
-    const [isAuthReady, setIsAuthReady] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const [selectedTrip, setSelectedTrip] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [app, setApp] = useState(null);
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
+// Initialize Firebase
+const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
+const auth = app ? getAuth(app) : null;
+const db = app ? getFirestore(app) : null;
 
-    const mapContainer = useRef(null);
-    const mapRef = useRef(null);
+// Set log level for Firebase
+if (db) setLogLevel('debug');
 
-    const [modal, setModal] = useState({
-        isVisible: false,
-        title: '',
-        message: '',
-        isConfirm: false,
-        onConfirm: () => {},
-        onCancel: () => {}
-    });
+function App() {
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [userId, setUserId] = useState(null);
+  const [currentLocation, setCurrentLocation] = useState('');
+  const [pickupLocation, setPickupLocation] = useState('');
+  const [dropoffLocation, setDropoffLocation] = useState('');
+  const [currentCycleHours, setCurrentCycleHours] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [tripData, setTripData] = useState(null);
+  const [error, setError] = useState(null);
+  const [savedTrips, setSavedTrips] = useState([]);
+  const [currentPage, setCurrentPage] = useState('home');
+  const [selectedTrip, setSelectedTrip] = useState(null);
 
-    const showModal = (title, message, isConfirm = false) => {
-        return new Promise(resolve => {
-            setModal({
-                isVisible: true,
-                title,
-                message,
-                isConfirm,
-                onConfirm: () => {
-                    setModal(prev => ({ ...prev, isVisible: false }));
-                    resolve(true);
-                },
-                onCancel: () => {
-                    setModal(prev => ({ ...prev, isVisible: false }));
-                    resolve(false);
-                }
-            });
-        });
-    };
-    
-    // Firebase & Mapbox Initialization
-    useEffect(() => {
-        if (Object.keys(firebaseConfig).length > 0) {
-            const firebaseApp = initializeApp(firebaseConfig);
-            const firebaseAuth = getAuth(firebaseApp);
-            const firestoreDb = getFirestore(firebaseApp);
-            setLogLevel('debug');
-            setApp(firebaseApp);
-            setDb(firestoreDb);
-            setAuth(firebaseAuth);
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const eldCanvasRef = useRef(null);
 
-            onAuthStateChanged(firebaseAuth, async (user) => {
-                if (user) {
-                    setUserId(user.uid);
-                    setIsAuthReady(true);
-                } else {
-                    try {
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(firebaseAuth, initialAuthToken);
-                        } else {
-                            await signInAnonymously(firebaseAuth);
-                        }
-                    } catch (error) {
-                        console.error("Firebase Auth error:", error);
-                        showModal("Authentication Error", "Failed to sign in. Check network connection.");
-                        setIsAuthReady(true);
-                    }
-                }
-            });
-        }
-    }, [initialAuthToken]);
-
-    // Firestore Listener
-    useEffect(() => {
-        if (!db || !userId) return;
-
-        const tripsRef = collection(db, `artifacts/${appId}/users/${userId}/trips`);
-        const q = query(tripsRef);
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedTrips = [];
-            snapshot.forEach(doc => {
-                fetchedTrips.push({ id: doc.id, ...doc.data() });
-            });
-            // Sort by timestamp in descending order on the client side
-            fetchedTrips.sort((a, b) => b.timestamp?.toDate() - a.timestamp?.toDate());
-            setTrips(fetchedTrips);
-        }, (error) => {
-            console.error("Error fetching trips:", error);
-            showModal("Database Error", "Failed to fetch trip data.");
-        });
-
-        return () => unsubscribe();
-    }, [db, userId]);
-
-    // Mapbox Map Initialization and dynamic script loading
-    useEffect(() => {
-        const script = document.createElement('script');
-        script.src = `https://api.mapbox.com/mapbox-gl-js/v2.12.0/mapbox-gl.js`;
-        script.onload = () => {
-            window.mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
-            if (mapContainer.current) {
-                mapRef.current = new window.mapboxgl.Map({
-                    container: mapContainer.current,
-                    style: 'mapbox://styles/mapbox/streets-v11',
-                    center: [-98.5795, 39.8283], // Center of the US
-                    zoom: 3
-                });
-                mapRef.current.addControl(new window.mapboxgl.NavigationControl());
-            }
+  // --- Geocoding and Location Logic ---
+  const geocode = async (address) => {
+    if (!address) return null;
+    try {
+      const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${MAPBOX_ACCESS_TOKEN}`);
+      const data = await response.json();
+      if (data.features.length > 0) {
+        const feature = data.features[0];
+        return {
+          lng: feature.center[0],
+          lat: feature.center[1],
+          name: feature.place_name,
         };
-        document.head.appendChild(script);
+      }
+      return null;
+    } catch (e) {
+      console.error("Geocoding failed:", e);
+      return null;
+    }
+  };
+
+  const getUserLocation = () => {
+    if (navigator.geolocation) {
+      setLoading(true);
+      navigator.geolocation.getCurrentPosition(async (position) => {
+        const { latitude, longitude } = position.coords;
+        const place = await geocode(`${longitude},${latitude}`);
+        if (place) {
+          setCurrentLocation(place.name);
+        }
+        setLoading(false);
+      }, (error) => {
+        console.error('Geolocation error:', error);
+        setError('Unable to retrieve your current location.');
+        setLoading(false);
+      });
+    } else {
+      setError('Geolocation is not supported by your browser.');
+    }
+  };
+
+  // --- Firebase & Firestore Logic ---
+  useEffect(() => {
+    const initFirebase = async () => {
+      if (!app) {
+        console.error("Firebase not initialized. Check firebaseConfig.");
+        return;
+      }
+      try {
+        if (initialAuthToken) {
+          await signInWithCustomToken(auth, initialAuthToken);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (e) {
+        console.error("Firebase auth error:", e);
+      }
+    };
+
+    if (auth && !userId) {
+      const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (user) {
+          setUserId(user.uid);
+          setIsAuthReady(true);
+          console.log(`User authenticated with UID: ${user.uid}`);
+        } else {
+          console.log("User is signed out.");
+          setUserId(null);
+          setIsAuthReady(true);
+        }
+      });
+      initFirebase();
+      return () => unsubscribe();
+    }
+  }, [auth, userId, initialAuthToken]);
+
+  useEffect(() => {
+    if (isAuthReady && userId && db) {
+      const tripsRef = collection(db, 'artifacts', appId, 'users', userId, 'trips');
+      const q = query(tripsRef);
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const trips = [];
+        snapshot.forEach(doc => {
+          trips.push({ id: doc.id, ...doc.data() });
+        });
+        setSavedTrips(trips);
+      }, (err) => {
+        console.error("Failed to fetch trips:", err);
+      });
+
+      return () => unsubscribe();
+    }
+  }, [isAuthReady, userId, db, appId]);
+
+  const saveTrip = async (data) => {
+    if (!userId || !db) {
+      setError("Unable to save trip. Authentication failed.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const docRef = await addDoc(collection(db, 'artifacts', appId, 'users', userId, 'trips'), {
+        ...data,
+        createdAt: serverTimestamp(),
+      });
+      console.log("Trip saved with ID:", docRef.id);
+    } catch (e) {
+      console.error("Error saving trip:", e);
+      setError("Failed to save trip data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- Trip & ELD Log Calculation Logic ---
+  const calculateTrip = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+  
+    try {
+      if (!currentLocation || !pickupLocation || !dropoffLocation || !currentCycleHours) {
+        setError('All fields are required.');
+        setLoading(false);
+        return;
+      }
+  
+      const origin = await geocode(currentLocation);
+      const pickup = await geocode(pickupLocation);
+      const dropoff = await geocode(dropoffLocation);
+  
+      if (!origin || !pickup || !dropoff) {
+        setError('One or more locations could not be found.');
+        setLoading(false);
+        return;
+      }
+  
+      const routeUrl = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${pickup.lng},${pickup.lat};${dropoff.lng},${dropoff.lat}?geometries=geojson&access_token=${MAPBOX_ACCESS_TOKEN}`;
+      const routeResponse = await fetch(routeUrl);
+      const routeData = await routeResponse.json();
+  
+      if (!routeData || !routeData.routes || routeData.routes.length === 0) {
+        setError('No route could be found between the specified locations.');
+        setLoading(false);
+        return;
+      }
+  
+      const route = routeData.routes[0];
+      const distance = route.distance / 1609.34; // meters to miles
+      const duration = route.duration / 3600; // seconds to hours
+      
+      // Assumptions from assessment
+      const averageSpeed = 60; // mph
+      const drivingHours = distance / averageSpeed;
+      const onDutyHours = drivingHours + 1; // 1 hr for pickup/drop-off
+      const fuelStopsNeeded = Math.floor(distance / 1000);
+      const totalTripHours = onDutyHours; // simplified for this calculation
+      const remainingCycleHours = Math.max(0, 70 - parseFloat(currentCycleHours));
+      const dailyLogSheets = Math.ceil(totalTripHours / 24);
+  
+      let stops = [];
+      let restNeeded = false;
+      if (totalTripHours > remainingCycleHours) {
+        restNeeded = true;
+        const restDuration = totalTripHours - remainingCycleHours;
+        stops.push({
+          type: 'Rest',
+          duration: restDuration.toFixed(2),
+          time: new Date().toLocaleTimeString(),
+        });
+      }
+  
+      if (fuelStopsNeeded > 0) {
+        stops.push({
+          type: 'Fuel',
+          count: fuelStopsNeeded,
+        });
+      }
+      
+      const eldLogData = generateEldLogData(totalTripHours, parseFloat(currentCycleHours));
+  
+      const newTrip = {
+        origin,
+        pickup,
+        dropoff,
+        distance: distance.toFixed(2),
+        duration: duration.toFixed(2),
+        totalHours: totalTripHours.toFixed(2),
+        remainingHours: remainingCycleHours.toFixed(2),
+        eldLogData,
+        stops,
+        routeGeoJSON: route.geometry,
+      };
+      
+      setTripData(newTrip);
+      await saveTrip(newTrip);
+  
+    } catch (e) {
+      console.error("Trip calculation error:", e);
+      setError("An error occurred during trip calculation.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateEldLogData = (totalTripHours, currentCycleHours) => {
+    const totalAvailableHours = 70;
+    const drivingLimit = 11;
+    const onDutyLimit = 14;
+
+    let data = [];
+    let cumulativeHours = currentCycleHours;
+
+    // Simulate logs for each 24-hour period
+    for (let day = 1; day <= Math.ceil(totalTripHours / 24); day++) {
+        let driving = 0;
+        let onDuty = 0;
+        let offDuty = 0;
+        let sleeperBerth = 0;
+
+        let hoursLeftInDay = 24;
+        let tripHoursRemaining = totalTripHours - (24 * (day - 1));
+
+        // Driving
+        if (tripHoursRemaining > 0) {
+            driving = Math.min(tripHoursRemaining, drivingLimit, totalAvailableHours - cumulativeHours);
+            cumulativeHours += driving;
+            hoursLeftInDay -= driving;
+        }
+
+        // On Duty (non-driving) - pickup/dropoff
+        if (hoursLeftInDay > 0 && day === 1) { // Only on the first day for simplicity
+            onDuty = Math.min(1, hoursLeftInDay, onDutyLimit - driving);
+            hoursLeftInDay -= onDuty;
+        }
         
-        return () => {
-            if (mapRef.current) {
-                mapRef.current.remove();
-                mapRef.current = null;
-            }
-            document.head.removeChild(script);
-        };
-    }, []);
-
-    // Function to calculate route and generate logs
-    const generateTrip = async (tripDetails) => {
-        setIsLoading(true);
-        try {
-            const { driverName, currentLocation, pickupLocation, dropoffLocation, currentCycleHours } = tripDetails;
-
-            const geocodeLocation = async (location) => {
-                const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(location)}.json?access_token=${MAPBOX_ACCESS_TOKEN}`);
-                const data = await response.json();
-                if (data.features.length === 0) throw new Error(`Could not find coordinates for ${location}`);
-                return data.features[0].geometry.coordinates;
-            };
-
-            const pickupCoords = await geocodeLocation(pickupLocation);
-            const dropoffCoords = await geocodeLocation(dropoffLocation);
-            
-            const routeUrl = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${pickupCoords[0]},${pickupCoords[1]};${dropoffCoords[0]},${dropoffCoords[1]}?geometries=geojson&access_token=${MAPBOX_ACCESS_TOKEN}`;
-            const routeResponse = await fetch(routeUrl);
-            const routeData = await routeResponse.json();
-
-            if (!routeData.routes || routeData.routes.length === 0) throw new Error("Could not find a route between the locations.");
-            
-            const route = routeData.routes[0];
-            const distanceMiles = route.distance / 1609.34;
-            const durationHours = route.duration / 3600;
-
-            const logs = [];
-            let totalHoursUsed = parseFloat(currentCycleHours);
-            let totalTripHours = durationHours + 2; 
-            const drivingLimit = 11;
-            const onDutyLimit = 14;
-            const cycleLimit = 70;
-            const offDutyNeeded = 10;
-            const mandatoryBreak = 0.5;
-            const fuelInterval = 1000;
-            let days = 1;
-
-            while (totalTripHours > 0) {
-                let dailyDriving = Math.min(totalTripHours, drivingLimit);
-                let dailyOnDuty = dailyDriving;
-                let dailyOffDuty = 0;
-                let dailySleeper = 0;
-                let remarks = [];
-                
-                if (days === 1) {
-                    remarks.push({ time: "Start", status: "On Duty", notes: `Pickup at ${pickupLocation}.` });
-                    dailyOnDuty += 1; // 1 hour for pickup
-                }
-
-                // Add fuel stops
-                const fuelStops = Math.floor(distanceMiles / fuelInterval);
-                if (fuelStops > 0 && days === 1) {
-                    for(let i = 1; i <= fuelStops; i++){
-                        remarks.push({ time: "Varies", status: "On Duty", notes: `Fuel stop #${i}.` });
-                        dailyOnDuty += 1;
-                    }
-                }
-
-                // Add mandatory breaks
-                if (dailyDriving >= 8) {
-                    dailyOffDuty += mandatoryBreak;
-                    remarks.push({ time: "Varies", status: "Off Duty", notes: "Mandatory 30-minute break." });
-                }
-
-                // Check for 14-hour on-duty limit
-                if (dailyOnDuty > onDutyLimit) {
-                    // This scenario is not handled in the user's original logic. For simplicity, we will log a warning.
-                    remarks.push({ time: "Warning", status: "On Duty", notes: "Exceeded 14-hour on-duty limit." });
-                }
-
-                totalHoursUsed += dailyOnDuty + dailyOffDuty + dailySleeper;
-                totalTripHours -= dailyDriving;
-
-                if (totalTripHours <= 0) {
-                    remarks.push({ time: "End", status: "On Duty", notes: `Trip concluded at ${dropoffLocation}.` });
-                    dailyOnDuty += 1; // 1 hour for dropoff
-                } else {
-                    dailySleeper += offDutyNeeded;
-                    remarks.push({ time: "End of Day", status: "Sleeper Berth", notes: `Mandatory 10-hour rest on Day ${days}.` });
-                }
-
-                logs.push({
-                    day: days,
-                    driving: dailyDriving.toFixed(2),
-                    onDuty: dailyOnDuty.toFixed(2),
-                    offDuty: dailyOffDuty.toFixed(2),
-                    sleeperBerth: dailySleeper.toFixed(2),
-                    remarks
-                });
-
-                days++;
-            }
-            
-            if (totalHoursUsed > cycleLimit) {
-                showModal("Warning", `Driver has exceeded the 70-hour cycle limit. Total hours: ${totalHoursUsed.toFixed(2)}.`);
-            }
-
-            const newTrip = {
-                driverName,
-                pickup: pickupLocation,
-                dropoff: dropoffLocation,
-                miles: distanceMiles.toFixed(2),
-                hours: durationHours.toFixed(2),
-                logs,
-                route: route.geometry,
-                timestamp: serverTimestamp()
-            };
-
-            if (db && userId) {
-                const tripsRef = collection(db, `artifacts/${appId}/users/${userId}/trips`);
-                await addDoc(tripsRef, newTrip);
-                showModal("Success", "Trip saved and log sheets generated!");
-            } else {
-                console.error("Firebase not initialized or user not logged in.");
-            }
-
-            setSelectedTrip(newTrip);
-            setCurrentPage('logs');
-
-        } catch (error) {
-            console.error("Trip generation error:", error);
-            showModal("Trip Error", error.message);
-        } finally {
-            setIsLoading(false);
+        // Break for rest if needed
+        if (hoursLeftInDay > 0 && cumulativeHours >= 70) {
+          sleeperBerth = hoursLeftInDay;
         }
+
+        // Off Duty (remaining time)
+        offDuty = Math.max(0, hoursLeftInDay - sleeperBerth);
+
+        data.push({
+            day,
+            driving: parseFloat(driving.toFixed(2)),
+            onDuty: parseFloat(onDuty.toFixed(2)),
+            offDuty: parseFloat(offDuty.toFixed(2)),
+            sleeperBerth: parseFloat(sleeperBerth.toFixed(2)),
+            totalDailyHours: parseFloat((driving + onDuty + offDuty + sleeperBerth).toFixed(2)),
+        });
+    }
+    return data;
+  };
+  
+  // --- Mapbox and Canvas Drawing ---
+  useEffect(() => {
+    const initializeMap = (center, route) => {
+      if (mapRef.current) mapRef.current.remove();
+      
+      mapRef.current = new mapboxgl.Map({
+        container: mapContainerRef.current,
+        style: 'mapbox://styles/mapbox/streets-v11',
+        center: [center.lng, center.lat],
+        zoom: 6,
+      });
+
+      mapRef.current.on('load', () => {
+        new mapboxgl.Marker({ color: 'green' }).setLngLat([route.pickup.lng, route.pickup.lat]).setPopup(new mapboxgl.Popup().setText('Pickup')).addTo(mapRef.current);
+        new mapboxgl.Marker({ color: 'red' }).setLngLat([route.dropoff.lng, route.dropoff.lat]).setPopup(new mapboxgl.Popup().setText('Dropoff')).addTo(mapRef.current);
+        
+        mapRef.current.addSource('route', {
+          'type': 'geojson',
+          'data': {
+            'type': 'Feature',
+            'properties': {},
+            'geometry': route.routeGeoJSON,
+          },
+        });
+
+        mapRef.current.addLayer({
+          'id': 'route',
+          'type': 'line',
+          'source': 'route',
+          'layout': {
+            'line-join': 'round',
+            'line-cap': 'round',
+          },
+          'paint': {
+            'line-color': '#1E40AF',
+            'line-width': 6,
+          },
+        });
+      });
     };
     
-    const deleteTrip = async (tripId) => {
-        const confirm = await showModal("Confirm Deletion", "Are you sure you want to delete this trip?", true);
-        if (confirm) {
-            try {
-                await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/trips`, tripId));
-                showModal("Deleted", "Trip has been deleted successfully.");
-            } catch (error) {
-                console.error("Error deleting trip:", error);
-                showModal("Error", "Failed to delete trip.");
-            }
+    const drawELDLog = (logData) => {
+      const canvas = eldCanvasRef.current;
+      if (!canvas || !logData) return;
+      
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const hoursInDay = 24;
+      const blockHeight = 40;
+      const margin = 20;
+      const xOffset = 50;
+      const yOffset = 20;
+      const totalWidth = canvas.width - xOffset - margin;
+      const hourWidth = totalWidth / hoursInDay;
+      
+      ctx.font = '12px sans-serif';
+      ctx.fillStyle = '#333';
+      
+      const colors = {
+        driving: '#1C64F2',
+        onDuty: '#FDBA74',
+        offDuty: '#34D399',
+        sleeperBerth: '#9CA3AF',
+      };
+      
+      // Draw grid lines
+      ctx.strokeStyle = '#E5E7EB';
+      for (let i = 0; i <= hoursInDay; i++) {
+        const x = xOffset + i * hourWidth;
+        ctx.beginPath();
+        ctx.moveTo(x, yOffset);
+        ctx.lineTo(x, yOffset + logData.length * (blockHeight + margin));
+        ctx.stroke();
+        ctx.fillText(i.toString(), x, yOffset - 5);
+      }
+      
+      // Draw logs
+      logData.forEach((log, index) => {
+        const y = yOffset + index * (blockHeight + margin);
+        
+        // Draw bars
+        let currentX = xOffset;
+        if (log.driving > 0) {
+          ctx.fillStyle = colors.driving;
+          ctx.fillRect(currentX, y, log.driving * hourWidth, blockHeight);
+          currentX += log.driving * hourWidth;
         }
+        if (log.onDuty > 0) {
+          ctx.fillStyle = colors.onDuty;
+          ctx.fillRect(currentX, y, log.onDuty * hourWidth, blockHeight);
+          currentX += log.onDuty * hourWidth;
+        }
+        if (log.offDuty > 0) {
+          ctx.fillStyle = colors.offDuty;
+          ctx.fillRect(currentX, y, log.offDuty * hourWidth, blockHeight);
+          currentX += log.offDuty * hourWidth;
+        }
+        if (log.sleeperBerth > 0) {
+          ctx.fillStyle = colors.sleeperBerth;
+          ctx.fillRect(currentX, y, log.sleeperBerth * hourWidth, blockHeight);
+        }
+        
+        // Draw labels
+        ctx.fillStyle = '#333';
+        ctx.fillText(`Day ${log.day}`, 5, y + blockHeight / 2 + 4);
+      });
+      
+      // Draw legend
+      const legendItems = [
+        { label: 'Driving', color: colors.driving },
+        { label: 'On Duty', color: colors.onDuty },
+        { label: 'Off Duty', color: colors.offDuty },
+        { label: 'Sleeper Berth', color: colors.sleeperBerth },
+      ];
+      
+      let legendX = xOffset;
+      const legendY = yOffset + logData.length * (blockHeight + margin) + 20;
+      
+      legendItems.forEach(item => {
+        ctx.fillStyle = item.color;
+        ctx.fillRect(legendX, legendY, 20, 10);
+        ctx.fillStyle = '#333';
+        ctx.fillText(item.label, legendX + 25, legendY + 9);
+        legendX += ctx.measureText(item.label).width + 50;
+      });
     };
-
-    // UI components
-    const DashboardCard = ({ icon, title, value, unit, color }) => (
-        <div className="bg-white rounded-xl shadow-lg p-6 flex items-center space-x-4">
-            <div className={`flex-shrink-0 bg-${color}-100 rounded-full p-3`}>
-                <div className={`h-6 w-6 text-${color}-500`}>{icon}</div>
+    
+    if (tripData?.routeGeoJSON) {
+      initializeMap(tripData.origin, tripData);
+      drawELDLog(tripData.eldLogData);
+    }
+    
+  }, [tripData]);
+  
+  const handleReloadTrip = (trip) => {
+    setSelectedTrip(trip);
+    setTripData(trip);
+    setCurrentPage('trip-details');
+  };
+  
+  // --- UI Components ---
+  const renderHome = () => (
+    <div className="p-4 sm:p-8 space-y-8 max-w-4xl mx-auto">
+      <div className="bg-white rounded-xl shadow-lg p-6 sm:p-8 space-y-6">
+        <h2 className="text-2xl font-bold text-gray-800 text-center flex items-center justify-center gap-2"><Truck size={28} className="text-blue-600" /> Plan Your Trip</h2>
+        <form onSubmit={calculateTrip} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Current Location</label>
+              <div className="relative">
+                <input type="text" className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" value={currentLocation} onChange={(e) => setCurrentLocation(e.target.value)} required />
+                <button type="button" onClick={getUserLocation} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full transition-colors">
+                  <Locate size={20} />
+                </button>
+              </div>
             </div>
             <div>
-                <div className="text-sm text-gray-500">{title}</div>
-                <div className="text-2xl font-semibold text-gray-900">{value} <span className="text-base font-normal text-gray-500">{unit}</span></div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Current Cycle Used (Hrs)</label>
+              <input type="number" step="0.1" className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" value={currentCycleHours} onChange={(e) => setCurrentCycleHours(e.target.value)} required />
             </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Pickup Location</label>
+              <input type="text" className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" value={pickupLocation} onChange={(e) => setPickupLocation(e.target.value)} required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Dropoff Location</label>
+              <input type="text" className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" value={dropoffLocation} onChange={(e) => setDropoffLocation(e.target.value)} required />
+            </div>
+          </div>
+          <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors flex items-center justify-center gap-2">
+            {loading ? <Loader size={20} className="animate-spin" /> : <TrendingUp size={20} />} Calculate Trip
+          </button>
+        </form>
+        {error && <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg flex items-center gap-2"><XCircle size={20} /> {error}</div>}
+      </div>
+      
+      {savedTrips.length > 0 && (
+        <div className="bg-white rounded-xl shadow-lg p-6 sm:p-8 mt-8">
+          <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2"><ListChecks size={24} className="text-gray-500" /> Past Trips</h3>
+          <div className="space-y-4">
+            {savedTrips.map(trip => (
+              <div key={trip.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-800">{trip.pickup?.name} to {trip.dropoff?.name}</p>
+                  <p className="text-sm text-gray-500">{new Date(trip.createdAt?.toDate()).toLocaleDateString()}</p>
+                </div>
+                <button onClick={() => handleReloadTrip(trip)} className="mt-2 sm:mt-0 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium flex items-center gap-1">
+                  <Info size={16} /> View Details
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
-    );
-
-    const renderDashboard = () => {
-        const totalMiles = trips.reduce((sum, trip) => sum + parseFloat(trip.miles), 0);
-        const totalHours = trips.reduce((sum, trip) => sum + parseFloat(trip.hours), 0);
-        const totalTrips = trips.length;
-
-        return (
-            <div className="p-8">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <DashboardCard icon={<Gauge />} title="Total Miles Logged" value={totalMiles.toFixed(2)} unit="miles" color="blue" />
-                    <DashboardCard icon={<Clock />} title="Total Hours Driven" value={totalHours.toFixed(2)} unit="hours" color="green" />
-                    <DashboardCard icon={<Truck />} title="Total Trips Completed" value={totalTrips} unit="trips" color="purple" />
-                </div>
-            </div>
-        );
-    };
-
-    const renderLogs = () => (
-        <div className="p-8">
-            <h2 className="text-3xl font-bold text-gray-800 mb-6">Trip Logs</h2>
-            {selectedTrip ? (
-                <div className="bg-white rounded-xl shadow-lg p-6">
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold">Log Sheet for {selectedTrip.driverName}</h3>
-                        <button onClick={() => setSelectedTrip(null)} className="text-blue-600 hover:text-blue-800 flex items-center gap-1">
-                            <ListChecks size={18} /> Back to List
-                        </button>
-                    </div>
-                    {selectedTrip.logs.map((log, index) => (
-                        <div key={index} className="log-sheet p-6 mb-8 rounded-lg border-2 border-gray-200">
-                            <div className="text-center mb-4">
-                                <h1 className="text-2xl font-bold text-gray-800">Daily Log Sheet (Day {log.day})</h1>
-                                <p className="text-sm text-gray-500">Date: {selectedTrip.timestamp?.toDate().toLocaleDateString()}</p>
-                            </div>
-                            <div className="graph-container relative w-full h-48 border border-gray-400 rounded-lg overflow-hidden">
-                                <div className="absolute top-0 w-full h-full flex flex-col justify-between">
-                                    <div className="absolute w-full h-1/4 bg-gray-100"></div>
-                                    <div className="absolute w-full h-1/4 bg-gray-200 top-1/4"></div>
-                                    <div className="absolute w-full h-1/4 bg-gray-300 top-2/4"></div>
-                                    <div className="absolute w-full h-1/4 bg-gray-400 top-3/4"></div>
-                                </div>
-                                <canvas ref={canvas => {
-                                    if (canvas) {
-                                        const ctx = canvas.getContext('2d');
-                                        canvas.width = canvas.offsetWidth;
-                                        canvas.height = canvas.offsetHeight;
-                                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                                        const hourWidth = canvas.width / 24;
-                                        
-                                        const dutyStatusPositions = {
-                                            'Off Duty': canvas.height * 0.125,
-                                            'Sleeper Berth': canvas.height * 0.375,
-                                            'Driving': canvas.height * 0.625,
-                                            'On Duty': canvas.height * 0.875,
-                                        };
-                                        
-                                        let currentHour = 0;
-                                        const timeEntries = [
-                                            { status: 'Off Duty', hours: 0 },
-                                            { status: 'Driving', hours: parseFloat(log.driving) },
-                                            { status: 'On Duty', hours: parseFloat(log.onDuty) },
-                                            { status: 'Sleeper Berth', hours: parseFloat(log.sleeperBerth) }
-                                        ];
-
-                                        ctx.lineWidth = 4;
-                                        ctx.strokeStyle = '#3b82f6';
-                                        
-                                        // Draw the log line graph
-                                        ctx.beginPath();
-                                        ctx.moveTo(0, dutyStatusPositions['Off Duty']);
-                                        for (const entry of timeEntries) {
-                                            const startX = currentHour * hourWidth;
-                                            const endX = (currentHour + entry.hours) * hourWidth;
-                                            const y = dutyStatusPositions[entry.status] || 0;
-                                            
-                                            if (currentHour > 0) {
-                                                ctx.lineTo(startX, y);
-                                            }
-                                            ctx.lineTo(endX, y);
-                                            currentHour += entry.hours;
-                                        }
-                                        ctx.stroke();
-
-                                        // Draw labels and grid lines
-                                        ctx.font = '10px Inter';
-                                        ctx.fillStyle = '#4b5563';
-                                        for (let i = 0; i <= 24; i++) {
-                                            const xPos = i * hourWidth;
-                                            ctx.fillText(i, xPos, 15);
-                                            ctx.beginPath();
-                                            ctx.moveTo(xPos, 20);
-                                            ctx.lineTo(xPos, canvas.height);
-                                            ctx.strokeStyle = '#e5e7eb';
-                                            ctx.stroke();
-                                        }
-                                    }
-                                }} width="800" height="150" className="w-full"></canvas>
-                                <div className="absolute top-0 left-0 w-full h-full flex flex-col justify-around text-xs font-semibold text-gray-700 p-2">
-                                    <span>OFF DUTY</span>
-                                    <span>SLEEPER BERTH</span>
-                                    <span>DRIVING</span>
-                                    <span>ON DUTY</span>
-                                </div>
-                            </div>
-                            <h4 className="text-lg font-semibold mt-6 mb-2">Remarks & Events</h4>
-                            <div className="bg-gray-50 rounded-lg p-4 text-sm">
-                                {log.remarks.map((remark, rIndex) => (
-                                    <p key={rIndex} className="mb-1">
-                                        <span className="font-bold text-gray-700">[{remark.status}]</span> {remark.notes}
-                                    </p>
-                                ))}
-                            </div>
-                            <div className="mt-6 pt-4 border-t-2 border-dashed border-gray-300">
-                                <p className="text-sm font-semibold">Driver Signature: ___________________________________</p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                <div className="bg-white rounded-xl shadow-lg p-6">
-                    <ul className="divide-y divide-gray-200">
-                        {trips.length > 0 ? (
-                            trips.map(trip => (
-                                <li key={trip.id} className="py-4 flex items-center justify-between">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center text-sm font-semibold text-gray-900">
-                                            <Truck size={16} className="text-gray-500 mr-2" />
-                                            <span className="truncate">{trip.pickup} to {trip.dropoff}</span>
-                                        </div>
-                                        <p className="mt-1 flex items-center text-sm text-gray-500">
-                                            <Calendar size={14} className="mr-1" />
-                                            {trip.timestamp?.toDate().toLocaleDateString()}
-                                            <User size={14} className="ml-4 mr-1" />
-                                            {trip.driverName}
-                                        </p>
-                                    </div>
-                                    <div className="ml-4 flex items-center">
-                                        <button onClick={() => setSelectedTrip(trip)} className="p-2 text-blue-600 hover:text-blue-800 transition-colors">
-                                            <FileText size={20} />
-                                        </button>
-                                        <button onClick={() => deleteTrip(trip.id)} className="p-2 text-red-600 hover:text-red-800 transition-colors">
-                                            <Trash2 size={20} />
-                                        </button>
-                                    </div>
-                                </li>
-                            ))
-                        ) : (
-                            <li className="py-4 text-center text-gray-500">No trips logged yet.</li>
-                        )}
-                    </ul>
-                </div>
-            )}
+      )}
+    </div>
+  );
+  
+  const renderTripDetails = () => (
+    <div className="p-4 sm:p-8 space-y-8 max-w-6xl mx-auto">
+      <div className="bg-white rounded-xl shadow-lg p-6 sm:p-8">
+        <div className="flex justify-between items-center mb-6">
+          <button onClick={() => setCurrentPage('home')} className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-medium">
+            <Home size={18} /> Back to Home
+          </button>
+          <h2 className="text-2xl font-bold text-gray-800">Trip Details</h2>
         </div>
-    );
-
-    const renderNewTrip = () => {
-        const [form, setForm] = useState({
-            driverName: '',
-            currentLocation: '',
-            pickupLocation: '',
-            dropoffLocation: '',
-            currentCycleHours: 0
-        });
-
-        const handleChange = (e) => {
-            setForm({ ...form, [e.target.name]: e.target.value });
-        };
-
-        const handleSubmit = (e) => {
-            e.preventDefault();
-            generateTrip(form);
-        };
-
-        return (
-            <div className="p-8">
-                <div className="bg-white rounded-xl shadow-lg p-6 max-w-2xl mx-auto">
-                    <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Plan a New Trip</h2>
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <InputField icon={<User size={20} />} label="Driver Name" name="driverName" value={form.driverName} onChange={handleChange} required />
-                            <InputField icon={<Gauge size={20} />} label="Current Cycle Hours Used" name="currentCycleHours" type="number" value={form.currentCycleHours} onChange={handleChange} required />
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <InputField icon={<Locate size={20} />} label="Current Location" name="currentLocation" value={form.currentLocation} onChange={handleChange} required />
-                            <InputField icon={<MapPin size={20} />} label="Pickup Location" name="pickupLocation" value={form.pickupLocation} onChange={handleChange} required />
-                        </div>
-                        <InputField icon={<MapPin size={20} />} label="Dropoff Location" name="dropoffLocation" value={form.dropoffLocation} onChange={handleChange} required />
-                        
-                        <div className="flex justify-center">
-                            <button
-                                type="submit"
-                                className="bg-blue-600 text-white font-semibold py-3 px-8 rounded-full shadow-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
-                                disabled={isLoading}
-                            >
-                                {isLoading ? <Loader size={20} className="animate-spin" /> : <Plus size={20} />}
-                                <span>{isLoading ? 'Generating Trip...' : 'Generate Trip & Logs'}</span>
-                            </button>
-                        </div>
-                    </form>
+        
+        {selectedTrip ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-6">
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2"><Info size={20} /> Trip Summary</h3>
+                <div className="mt-2 text-sm text-gray-600 space-y-1">
+                  <p><span className="font-semibold">Distance:</span> {selectedTrip.distance} miles</p>
+                  <p><span className="font-semibold">Estimated Driving Time:</span> {selectedTrip.duration} hours</p>
+                  <p><span className="font-semibold">Total On-Duty Hours:</span> {selectedTrip.totalHours} hours</p>
+                  <p><span className="font-semibold">Remaining Cycle Hours:</span> {selectedTrip.remainingHours} hours</p>
+                  <p className="flex items-center gap-2"><span className="font-semibold">Daily Logs Required:</span> {selectedTrip.eldLogData.length} <FileText size={16} /></p>
                 </div>
+              </div>
+              
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2"><MapPin size={20} /> Stops & Notes</h3>
+                <ul className="mt-2 text-sm text-gray-600 space-y-2">
+                  {selectedTrip.stops.map((stop, index) => (
+                    <li key={index} className="flex items-start gap-2">
+                      {stop.type === 'Fuel' ? <Fuel size={16} className="text-yellow-500 mt-1" /> : <Bed size={16} className="text-indigo-500 mt-1" />}
+                      <span>{stop.type === 'Fuel' ? `${stop.count} Fuel Stops` : `Mandatory Rest Stop: ${stop.duration} hours`}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2"><BarChart2 size={20} /> ELD Daily Log</h3>
+                <canvas ref={eldCanvasRef} className="w-full h-auto mt-4 rounded-lg border" width="600" height="200" />
+              </div>
             </div>
-        );
-    };
-
-    const InputField = ({ icon, label, ...props }) => (
-        <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                {icon}
-            </div>
-            <input
-                {...props}
-                className="block w-full pl-12 pr-3 py-3 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                placeholder={label}
-            />
-        </div>
-    );
-    
-    const Modal = () => {
-        if (!modal.isVisible) return null;
-        return (
-            <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
-                <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-bold text-gray-800">{modal.title}</h3>
-                        <button onClick={modal.onCancel} className="text-gray-400 hover:text-gray-600">
-                            <XCircle size={24} />
-                        </button>
-                    </div>
-                    <div className="text-sm text-gray-600 mb-6">{modal.message}</div>
-                    <div className="flex justify-end space-x-4">
-                        {modal.isConfirm && (
-                            <button onClick={modal.onCancel} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-full hover:bg-gray-300 transition-colors">
-                                Cancel
-                            </button>
-                        )}
-                        <button onClick={modal.onConfirm} className={`text-white font-semibold py-2 px-4 rounded-full transition-colors ${modal.isConfirm ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
-                            {modal.isConfirm ? 'Confirm' : 'OK'}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    const renderPage = () => {
-        if (!isAuthReady || !userId) {
-            return (
-                <div className="flex flex-col items-center justify-center h-screen bg-gray-100">
-                    <Loader size={48} className="animate-spin text-gray-500" />
-                    <p className="mt-4 text-gray-600">Connecting to database...</p>
-                </div>
-            );
-        }
-
-        switch (currentPage) {
-            case 'dashboard':
-                return renderDashboard();
-            case 'logs':
-                return renderLogs();
-            case 'newTrip':
-                return renderNewTrip();
-            case 'map':
-                return (
-                    <div className="p-8">
-                        <div className="bg-white rounded-xl shadow-lg p-6">
-                            <h2 className="text-2xl font-bold text-gray-800 mb-4">Trip Map</h2>
-                            <div id="map-container" ref={mapContainer} className="h-[500px] w-full rounded-lg shadow-inner"></div>
-                            <div className="mt-4 text-gray-600">Map shows the route from the last generated trip.</div>
-                        </div>
-                    </div>
-                );
-            default:
-                return null;
-        }
-    };
-
-    return (
-        <div className="font-sans antialiased text-gray-900 bg-gray-100 min-h-screen flex flex-col md:flex-row">
-            <script src="https://cdn.tailwindcss.com"></script>
-            <link href="https://api.mapbox.com/mapbox-gl-js/v2.12.0/mapbox-gl.css" rel="stylesheet" />
-            <style>
-                {`
-                    @import url('https://rsms.me/inter/inter.css');
-                    html, body, #root {
-                        font-family: 'Inter', sans-serif;
-                    }
-                `}
-            </style>
             
-            <Modal />
-
-            {/* Sidebar Navigation */}
-            <aside className="bg-gray-800 text-gray-100 md:w-64 w-full p-4 flex md:flex-col justify-around items-center md:justify-start md:space-y-4 shadow-xl fixed bottom-0 md:static md:h-screen z-40">
-                <nav className="flex md:flex-col space-x-4 md:space-x-0 md:space-y-4 w-full">
-                    <button onClick={() => setCurrentPage('dashboard')} className={`flex items-center space-x-3 p-3 rounded-xl transition-colors w-full text-left ${currentPage === 'dashboard' ? 'bg-gray-700' : 'hover:bg-gray-700'}`}>
-                        <Home size={20} />
-                        <span className="hidden md:inline">Dashboard</span>
-                    </button>
-                    <button onClick={() => setCurrentPage('newTrip')} className={`flex items-center space-x-3 p-3 rounded-xl transition-colors w-full text-left ${currentPage === 'newTrip' ? 'bg-gray-700' : 'hover:bg-gray-700'}`}>
-                        <Plus size={20} />
-                        <span className="hidden md:inline">New Trip</span>
-                    </button>
-                    <button onClick={() => setCurrentPage('logs')} className={`flex items-center space-x-3 p-3 rounded-xl transition-colors w-full text-left ${currentPage === 'logs' ? 'bg-gray-700' : 'hover:bg-gray-700'}`}>
-                        <FileText size={20} />
-                        <span className="hidden md:inline">Log Sheets</span>
-                    </button>
-                    <button onClick={() => setCurrentPage('map')} className={`flex items-center space-x-3 p-3 rounded-xl transition-colors w-full text-left ${currentPage === 'map' ? 'bg-gray-700' : 'hover:bg-gray-700'}`}>
-                        <MapPin size={20} />
-                        <span className="hidden md:inline">Trip Map</span>
-                    </button>
-                </nav>
-            </aside>
-            
-            {/* Main Content Area */}
-            <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
-                <header className="bg-white shadow-md p-4 flex items-center justify-between sticky top-0 z-30">
-                    <h1 className="text-2xl font-bold text-gray-800">LogTrack</h1>
-                    {userId && (
-                        <div className="flex items-center space-x-2">
-                            <span className="text-sm font-medium text-gray-600">UserID:</span>
-                            <span className="bg-gray-200 text-gray-800 text-xs font-mono px-3 py-1 rounded-full">{userId}</span>
-                        </div>
-                    )}
-                </header>
-                <div className="p-4 md:p-8">
-                    {renderPage()}
-                </div>
-            </main>
+            <div className="w-full h-[500px] rounded-xl overflow-hidden shadow-lg">
+              <div ref={mapContainerRef} className="w-full h-full" />
+            </div>
+          </div>
+        ) : (
+          <p className="text-center text-gray-500">Select a trip from your history to view details.</p>
+        )}
+      </div>
+    </div>
+  );
+  
+  return (
+    <div className="min-h-screen bg-gray-100 font-sans text-gray-900">
+      <script src="https://cdn.tailwindcss.com"></script>
+      <header className="bg-blue-600 text-white p-4 shadow-md">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <h1 className="text-xl font-bold flex items-center gap-2">
+            <Truck size={24} /> FleetTrack
+          </h1>
+          <div className="flex items-center gap-4">
+             <div className="text-sm text-gray-200 hidden sm:block">User ID: {userId || 'N/A'}</div>
+          </div>
         </div>
-    );
-};
+      </header>
+      
+      <main>
+        {currentPage === 'home' && renderHome()}
+        {currentPage === 'trip-details' && renderTripDetails()}
+      </main>
+    </div>
+  );
+}
 
 export default App;
