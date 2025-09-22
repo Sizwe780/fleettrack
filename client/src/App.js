@@ -18,9 +18,6 @@ const FIREBASE_CONFIG = { /* PASTE YOUR FIREBASE CONFIG HERE */ };
 const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2U3OCIsImEiOiJjbWZncWkwZnIwNDBtMmtxd3BkeXVtYjZzIn0.niS9m5pCbK5Kv-_On2mTcg';
 
 // --- FIREBASE INITIALIZATION ---
-const app = initializeApp(FIREBASE_CONFIG);
-const auth = getAuth(app);
-const db = getFirestore(app);
 const appId = 'fleet-track-app';
 
 // --- MAIN APP COMPONENT ---
