@@ -1,852 +1,628 @@
-/* global __app_id, __firebase_config, __initial_auth_token, mapboxgl */
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Truck, MapPin, Calendar, Gauge, CheckCircle, XCircle, Loader, LocateFixed, Info, ArrowRightCircle, LogIn, LogOut, Database } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, addDoc, onSnapshot, collection, setDoc, getDoc } from 'firebase/firestore';
-import { Truck, MapPin, Calendar, Gauge, Info, CheckCircle, XCircle, Locate, Loader, ListChecks, TrendingUp, User, ClipboardPenLine, BookA } from 'lucide-react';
-import { createRoot } from 'react-dom/client';
+import { getFirestore, doc, addDoc, onSnapshot, collection } from 'firebase/firestore';
 
-// Main App component
 const App = () => {
-    // State management for UI and data
-    const [activeTab, setActiveTab] = useState('home');
-    const [formData, setFormData] = useState({
-        pickupLocation: '',
-        dropoffLocation: '',
-        cycleUsed: ''
-    });
-    const [profileData, setProfileData] = useState({
-        driverName: '',
-        vehicleNumber: '',
-        homeTerminal: ''
-    });
-    const [message, setMessage] = useState('');
-    const [messageType, setMessageType] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [isLocating, setIsLocating] = useState(false);
-    const [locationStatus, setLocationStatus] = useState(null);
-    const [tripData, setTripData] = useState([]);
-    const [selectedTrip, setSelectedTrip] = useState(null);
-    const [currentPage, setCurrentPage] = useState(0);
+  const [activeTab, setActiveTab] = useState('plan');
+  const [db, setDb] = useState(null);
+  const [auth, setAuth] = useState(null);
+  const [userId, setUserId] = useState('');
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [formData, setFormData] = useState({
+    currentLocation: '',
+    pickupLocation: '',
+    dropoffLocation: '',
+    cycleUsed: '',
+  });
+  const [tripData, setTripData] = useState(null);
+  const [publicTrips, setPublicTrips] = useState([]);
 
-    // State for Firebase
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [profileIsLoading, setProfileIsLoading] = useState(true);
+  const mapContainer = useRef(null);
+  const map = useRef(null);
+  const mapboxgl = useRef(null);
+  const mapInitialized = useRef(false);
 
-    // Canvas and Mapbox references
-    const canvasRef = useRef(null);
-    const mapRef = useRef(null);
-    const mapInstance = useRef(null);
-    const currentLocMarker = useRef(null);
+  // Constants based on assessment assumptions and HOS rules
+  const AVG_SPEED_MPH = 55;
+  const MAX_DRIVING_HRS = 11;
+  const MAX_ON_DUTY_HRS = 14;
+  const MIN_OFF_DUTY_HRS = 10;
+  const PICKUP_DROPOFF_TIME_HRS = 1;
+  const FUEL_INTERVAL_MILES = 1000;
+  
+  // Haversine formula to calculate distance between two lat/lon points
+  const haversineDistance = (coords1, coords2) => {
+    const R = 3958.8; // Radius of the Earth in miles
+    const toRadians = (deg) => deg * (Math.PI / 180);
+    const lat1 = toRadians(coords1[1]);
+    const lon1 = toRadians(coords1[0]);
+    const lat2 = toRadians(coords2[1]);
+    const lon2 = toRadians(coords2[0]);
+    const dLat = lat2 - lat1;
+    const dLon = lon2 - lon1;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1) * Math.cos(lat2) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
 
-    // --- Firebase Initialization and Data Fetching ---
-    useEffect(() => {
-        const initFirebase = async () => {
-            try {
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const firebaseConfigString = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-                const firebaseConfig = JSON.parse(firebaseConfigString);
+  /**
+   * Calculates a simulated trip and generates daily ELD logs based on HOS rules.
+   * @param {number[]} pickupCoords - [longitude, latitude] of pickup location.
+   * @param {number[]} dropoffCoords - [longitude, latitude] of dropoff location.
+   * @param {number} initialCycleUsed - The driver's current cycle used hours.
+   * @returns {object} An object with trip and log details.
+   */
+  const calculateTripAndLogs = (pickupCoords, dropoffCoords, initialCycleUsed) => {
+    const totalDistance = haversineDistance(pickupCoords, dropoffCoords);
+    let totalDrivingTime = totalDistance / AVG_SPEED_MPH;
+    let dailyLogs = [];
+    let stops = [];
+    let totalOnDutyTime = PICKUP_DROPOFF_TIME_HRS; // Start with pickup time
+    let totalOffDutyTime = 0;
+    let remainingDriving = totalDrivingTime;
+    let days = 0;
+    let fuelNeeded = Math.floor(totalDistance / FUEL_INTERVAL_MILES);
+    
+    // Add initial pickup stop
+    stops.push({ type: 'pickup', location: formData.pickupLocation, coords: pickupCoords });
 
-                // Check for a valid API key to prevent initialization errors
-                if (!firebaseConfig.apiKey) {
-                    console.error("Firebase Initialization Failed: Missing or invalid API key in configuration.");
-                    setMessage("Failed to initialize Firebase. API key is missing.");
-                    setMessageType('error');
-                    setProfileIsLoading(false);
-                    return;
-                }
+    while (remainingDriving > 0) {
+      days++;
+      let dailyLog = { day: days, driving: 0, onDuty: 0, offDuty: 0, sleeperBerth: 0 };
+      let drivingToday = Math.min(remainingDriving, MAX_DRIVING_HRS);
+      
+      dailyLog.driving = drivingToday;
+      remainingDriving -= drivingToday;
+      dailyLog.onDuty = drivingToday;
+      totalOnDutyTime += drivingToday;
+      
+      // Add a mandatory break if driving for more than 8 hours
+      if (drivingToday > 8) {
+          dailyLog.offDuty += 0.5;
+          totalOffDutyTime += 0.5;
+      }
+      
+      // Check if a fuel stop is needed and add time for it
+      const drivenMilesToday = drivingToday * AVG_SPEED_MPH;
+      if (fuelNeeded > 0) {
+          dailyLog.onDuty += 0.5; // 30 mins for fueling
+          totalOnDutyTime += 0.5;
+          fuelNeeded--;
+      }
 
-                const app = initializeApp(firebaseConfig);
-                const authInstance = getAuth(app);
-                const dbInstance = getFirestore(app);
-                setDb(dbInstance);
-                setAuth(authInstance);
+      // Add rest break for the night
+      if (remainingDriving > 0) {
+        dailyLog.offDuty += MIN_OFF_DUTY_HRS;
+        totalOffDutyTime += MIN_OFF_DUTY_HRS;
+        
+        // Add a stop for the rest
+        const midpointCoords = [
+          pickupCoords[0] + (dropoffCoords[0] - pickupCoords[0]) * ((totalDrivingTime - remainingDriving) / totalDrivingTime),
+          pickupCoords[1] + (dropoffCoords[1] - pickupCoords[1]) * ((totalDrivingTime - remainingDriving) / totalDrivingTime),
+        ];
+        stops.push({ type: 'rest', location: `Rest Stop Day ${days}`, coords: midpointCoords });
+      }
 
-                const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                if (initialToken) {
-                    await signInWithCustomToken(authInstance, initialToken);
-                } else {
-                    await signInAnonymously(authInstance);
-                }
+      dailyLogs.push(dailyLog);
+    }
+    
+    // Add final dropoff stop
+    stops.push({ type: 'dropoff', location: formData.dropoffLocation, coords: dropoffCoords });
+    totalOnDutyTime += PICKUP_DROPOFF_TIME_HRS;
 
-                const unsubscribe = onAuthStateChanged(authInstance, (user) => {
-                    if (user) {
-                        setUserId(user.uid);
-                    } else {
-                        setUserId(null);
-                    }
-                });
-                return () => unsubscribe();
-            } catch (error) {
-                console.error("Firebase initialization failed:", error);
-            }
-        };
-        initFirebase();
-    }, []);
+    return {
+      distance: totalDistance.toFixed(2),
+      estimatedTime: (totalOnDutyTime + totalOffDutyTime).toFixed(2),
+      dailyLogs: dailyLogs,
+      stops: stops
+    };
+  };
 
-    // Fetch trip data from Firestore
-    useEffect(() => {
-        if (!db || !userId) return;
-        const tripsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/trips`);
-        const unsubscribe = onSnapshot(tripsCollectionRef, (snapshot) => {
-            const trips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            // Sort client-side to avoid Firestore index issues
-            trips.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-            setTripData(trips);
-        }, (error) => {
-            console.error("Error listening to trip data:", error);
-        });
-        return () => unsubscribe();
-    }, [db, userId]);
+  const getCoordinates = async (address) => {
+    // This is a placeholder for a real geocoding API call.
+    // In a real app, you would fetch real coordinates from a service like Mapbox or Google Maps.
+    const geocodedCoords = {
+      'New York, NY': [-74.0060, 40.7128],
+      'Los Angeles, CA': [-118.2437, 34.0522],
+      'Chicago, IL': [-87.6298, 41.8781],
+      'Houston, TX': [-95.3698, 29.7604],
+      'Phoenix, AZ': [-112.074, 33.4484],
+    };
+    return geocodedCoords[address] || [Math.random() * -180, Math.random() * 90];
+  };
 
-    // Fetch profile data from Firestore
-    useEffect(() => {
-        if (!db || !userId) return;
-        const fetchProfile = async () => {
-            setProfileIsLoading(true);
-            try {
-                const profileDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/profile/userProfile`);
-                const profileDoc = await getDoc(profileDocRef);
-                if (profileDoc.exists()) {
-                    setProfileData(profileDoc.data());
-                } else {
-                     setProfileData({ driverName: '', vehicleNumber: '', homeTerminal: '' });
-                }
-            } catch (error) {
-                console.error("Error fetching profile:", error);
-            } finally {
-                setProfileIsLoading(false);
-            }
-        };
-        fetchProfile();
-    }, [db, userId]);
+  const handlePlanTrip = async () => {
+    setMessage(null);
+    setIsLoading(true);
+    if (!formData.pickupLocation || !formData.dropoffLocation) {
+      setMessage({ type: 'error', text: 'Pickup and dropoff locations are required.' });
+      setIsLoading(false);
+      return;
+    }
+    
+    try {
+      const pickupCoords = await getCoordinates(formData.pickupLocation);
+      const dropoffCoords = await getCoordinates(formData.dropoffLocation);
+      const trip = calculateTripAndLogs(pickupCoords, dropoffCoords, parseFloat(formData.cycleUsed) || 0);
+      setTripData(trip);
+      setMessage({ type: 'success', text: 'Trip planned successfully! Check the "Trips" and "Logs" tabs.' });
 
-    // --- Mapbox Initialization and Route Drawing ---
-    useEffect(() => {
-        if (activeTab === 'home' && mapRef.current && window.mapboxgl) {
-            if (mapInstance.current) return; // Map is already initialized
+      if (db && userId) {
+        const userTripCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/trips`);
+        await addDoc(userTripCollectionRef, { ...trip, formData, userId, timestamp: new Date() });
+      }
+    } catch (e) {
+      setMessage({ type: 'error', text: 'Error planning trip. Please try again.' });
+      console.error('Error planning trip:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-            window.mapboxgl.accessToken = 'pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4M29iazA2Z2gycXA4N2pmbDZmangifQ.-g_Qh_W4LpT9a6aA9V9i5Q'; // Public demo key
-            const map = new window.mapboxgl.Map({
-                container: mapRef.current,
-                style: 'mapbox://styles/mapbox/streets-v11',
-                center: [-98.5795, 39.8283], // Center of the US
-                zoom: 3
-            });
-            mapInstance.current = map;
-            map.addControl(new window.mapboxgl.NavigationControl(), 'bottom-right');
-            map.addControl(new window.mapboxgl.FullscreenControl(), 'bottom-right');
+  const drawLogOnCanvas = (canvasId, logData) => {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Cleanup function
-            return () => {
-                if (mapInstance.current) {
-                    mapInstance.current.remove();
-                    mapInstance.current = null;
-                }
-            };
+    const PADDING = 20;
+    const LOG_HEIGHT = 150;
+    const LOG_WIDTH = canvas.width - (2 * PADDING);
+    const HOURS = 24;
+    const hourlyWidth = LOG_WIDTH / HOURS;
+
+    ctx.fillStyle = '#f9fafb';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#d1d5db';
+    ctx.lineWidth = 1;
+
+    // Draw grid lines
+    for (let i = 0; i <= HOURS; i++) {
+      ctx.beginPath();
+      ctx.moveTo(PADDING + i * hourlyWidth, PADDING);
+      ctx.lineTo(PADDING + i * hourlyWidth, PADDING + LOG_HEIGHT);
+      ctx.stroke();
+
+      ctx.fillStyle = '#6b7280';
+      ctx.font = '10px Inter';
+      if (i % 2 === 0) {
+        ctx.fillText(i, PADDING + i * hourlyWidth - 4, PADDING - 5);
+      }
+    }
+
+    // Define status bars and colors
+    const statuses = ['Driving', 'On Duty', 'Sleeper Berth', 'Off Duty'];
+    const statusY = [0, 25, 50, 75];
+    const statusColors = {
+      'Driving': '#2563eb', // Blue-600
+      'On Duty': '#16a34a', // Green-600
+      'Sleeper Berth': '#facc15', // Yellow-400
+      'Off Duty': '#94a3b8', // Slate-400
+    };
+    
+    let timeLogged = 0;
+    const logEntries = [
+      { status: 'Driving', duration: logData.driving },
+      { status: 'On Duty', duration: logData.onDuty - logData.driving },
+      { status: 'Sleeper Berth', duration: logData.sleeperBerth },
+      { status: 'Off Duty', duration: logData.offDuty },
+    ];
+    
+    // Draw rectangles for each status based on time
+    let currentX = PADDING;
+    for (const entry of logEntries) {
+        if (entry.duration > 0) {
+            const width = entry.duration * hourlyWidth;
+            const yOffset = PADDING + statusY[statuses.indexOf(entry.status)];
+            ctx.fillStyle = statusColors[entry.status];
+            ctx.fillRect(currentX, yOffset, width, 20);
+            currentX += width;
         }
-    }, [activeTab]);
+    }
 
-    useEffect(() => {
-        if (activeTab === 'home' && mapInstance.current && selectedTrip && selectedTrip.route) {
-            const map = mapInstance.current;
-            const geojson = selectedTrip.route;
-            const routeSourceId = 'route';
+    // Draw status labels
+    const labels = ['Driving', 'On Duty', 'Sleeper', 'Off Duty'];
+    for (let i = 0; i < statuses.length; i++) {
+      ctx.fillStyle = statusColors[statuses[i]];
+      ctx.fillRect(PADDING - 15, PADDING + statusY[i], 10, 10);
+      ctx.fillStyle = '#1f2937';
+      ctx.font = '12px Inter';
+      ctx.fillText(labels[i], PADDING + 10, PADDING + statusY[i] + 10);
+    }
+  };
+  
+  // Firebase and Auth Initialization
+  useEffect(() => {
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+    const app = initializeApp(firebaseConfig);
+    const firestoreDb = getFirestore(app);
+    const firebaseAuth = getAuth(app);
+    setDb(firestoreDb);
+    setAuth(firebaseAuth);
 
-            // Ensure map has loaded before adding layers/sources
-            if (map.isStyleLoaded()) {
-                if (map.getSource(routeSourceId)) {
-                    map.getSource(routeSourceId).setData(geojson);
-                } else {
-                    map.addSource(routeSourceId, {
-                        type: 'geojson',
-                        data: geojson
-                    });
-                    map.addLayer({
-                        id: routeSourceId,
-                        type: 'line',
-                        source: routeSourceId,
-                        layout: { 'line-join': 'round', 'line-cap': 'round' },
-                        paint: { 'line-color': '#4c51bf', 'line-width': 8 } // Updated color for better visibility
-                    });
-                }
-                const coordinates = geojson.coordinates;
-                const bounds = coordinates.reduce((bounds, coord) => {
-                    return bounds.extend(coord);
-                }, new window.mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
-                map.fitBounds(bounds, { padding: 100 });
-            } else {
-                map.on('load', () => {
-                    // Re-run the logic once the map is fully loaded
-                    if (map.getSource(routeSourceId)) {
-                        map.getSource(routeSourceId).setData(geojson);
-                    } else {
-                        map.addSource(routeSourceId, {
-                            type: 'geojson',
-                            data: geojson
-                        });
-                        map.addLayer({
-                            id: routeSourceId,
-                            type: 'line',
-                            source: routeSourceId,
-                            layout: { 'line-join': 'round', 'line-cap': 'round' },
-                            paint: { 'line-color': '#4c51bf', 'line-width': 8 }
-                        });
-                    }
-                    const coordinates = geojson.coordinates;
-                    const bounds = coordinates.reduce((bounds, coord) => {
-                        return bounds.extend(coord);
-                    }, new window.mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
-                    map.fitBounds(bounds, { padding: 100 });
-                });
-            }
-        }
-    }, [selectedTrip, activeTab]);
-
-    // --- Geolocation Functionality ---
-    const handleLocateMe = useCallback(() => {
-        setIsLocating(true);
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    const { latitude, longitude } = position.coords;
-                    const geocodeUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`;
-                    fetch(geocodeUrl)
-                        .then(res => res.json())
-                        .then(data => {
-                            const address = data.address;
-                            const city = address.city || address.town || address.village;
-                            const state = address.state;
-                            const locationStr = city && state ? `${city}, ${state}` : `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-                            setFormData(prev => ({ ...prev, pickupLocation: locationStr }));
-                            setLocationStatus('success');
-                            if (currentLocMarker.current) {
-                                currentLocMarker.current.remove();
-                            }
-                            if (mapInstance.current) {
-                                currentLocMarker.current = new window.mapboxgl.Marker({ color: '#f59e0b' })
-                                    .setLngLat([longitude, latitude])
-                                    .addTo(mapInstance.current);
-                                mapInstance.current.flyTo({ center: [longitude, latitude], zoom: 10 });
-                            }
-                        })
-                        .catch(err => {
-                            console.error('Geocoding error:', err);
-                            setMessage('Failed to get city/state. Using coordinates.');
-                            setMessageType('error');
-                            setFormData(prev => ({ ...prev, pickupLocation: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` }));
-                        })
-                        .finally(() => setIsLocating(false));
-                },
-                (error) => {
-                    console.error("Geolocation error:", error);
-                    setLocationStatus('error');
-                    setMessage('Unable to retrieve location. Please check your browser permissions.');
-                    setMessageType('error');
-                    setIsLocating(false);
-                }
-            );
+    const checkAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined') {
+          await signInWithCustomToken(firebaseAuth, __initial_auth_token);
         } else {
-            setLocationStatus('error');
-            setMessage('Geolocation is not supported by your browser.');
-            setMessageType('error');
-            setIsLocating(false);
+          await signInAnonymously(firebaseAuth);
         }
-    }, []);
-
-    // --- Trip Planning Logic ---
-    const calculateTripSchedule = useCallback((totalDrivingHours, cycleUsed) => {
-        const schedule = [];
-        let remainingHours = totalDrivingHours;
-        let remainingCycle = 70 - parseFloat(cycleUsed);
-        let days = 1;
-
-        while (remainingHours > 0) {
-            let daySchedule = { offDuty: 0, sleeper: 0, driving: 0, onDuty: 0 };
-
-            // 11-hour driving limit
-            let maxDrivingToday = Math.min(11, remainingHours);
-            // 14-hour on-duty limit
-            let maxOnDutyToday = 14;
-
-            // 70-hour/8-day cycle
-            if (days > 1) { // 34-hour restart after a full day
-                if (remainingCycle <= 0) {
-                    remainingCycle = 70;
-                }
-            }
-            maxDrivingToday = Math.min(maxDrivingToday, remainingCycle);
-
-            let driving = maxDrivingToday;
-            let onDuty = 1; // 1 hour for pre/post trip
-            if (driving > 8) {
-                onDuty += 0.5; // 30-minute break
-            }
-
-            if (driving + onDuty > maxOnDutyToday) {
-                const excess = (driving + onDuty) - maxOnDutyToday;
-                driving -= excess;
-                onDuty = maxOnDutyToday - driving;
-            }
-
-            daySchedule.driving = driving;
-            daySchedule.onDuty = onDuty;
-            daySchedule.offDuty = 24 - (driving + onDuty);
-
-            remainingHours -= driving;
-            remainingCycle -= driving;
-
-            schedule.push(daySchedule);
-            days++;
-        }
-        return schedule;
-    }, []);
-
-    const handlePlanTrip = async (e) => {
-        e.preventDefault();
-        if (!db || !userId) {
-            setMessage("Authentication is not ready. Please wait.");
-            setMessageType('error');
-            return;
-        }
-        if (!profileData.driverName || !profileData.vehicleNumber) {
-            setMessage("Please fill out your driver profile first.");
-            setMessageType('error');
-            return;
-        }
-
-        setIsLoading(true);
-        setMessage('Calculating route...');
-        setMessageType('info');
-
-        try {
-            // Geocoding for pickup and dropoff
-            const pickupGeo = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(formData.pickupLocation)}&format=json&limit=1`).then(res => res.json());
-            const dropoffGeo = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(formData.dropoffLocation)}&format=json&limit=1`).then(res => res.json());
-
-            if (pickupGeo.length === 0 || dropoffGeo.length === 0) {
-                setMessage("Could not find locations. Please be more specific.");
-                setMessageType('error');
-                setIsLoading(false);
-                return;
-            }
-
-            const startCoords = [parseFloat(pickupGeo[0].lon), parseFloat(pickupGeo[0].lat)];
-            const endCoords = [parseFloat(dropoffGeo[0].lon), parseFloat(dropoffGeo[0].lat)];
-
-            // OSRM routing API call
-            const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startCoords.join(',')};${endCoords.join(',')}?geometries=geojson&steps=true`;
-            setMessage('Getting routing instructions...');
-            const routeRes = await fetch(osrmUrl);
-            if (!routeRes.ok) {
-                throw new Error(`OSRM API error: ${routeRes.statusText}`);
-            }
-            const routeData = await routeRes.json();
-
-            if (routeData.code !== 'Ok' || !routeData.routes[0]) {
-                setMessage("Could not find a valid route. Please check your locations.");
-                setMessageType('error');
-                setIsLoading(false);
-                return;
-            }
-
-            const route = routeData.routes[0];
-            const distanceMeters = route.distance;
-            const durationSeconds = route.duration;
-
-            const distanceMiles = (distanceMeters * 0.000621371).toFixed(2);
-            const totalDrivingHours = (durationSeconds / 3600).toFixed(2);
-
-            const totalHours = parseFloat(totalDrivingHours);
-            const schedule = calculateTripSchedule(totalHours, formData.cycleUsed);
-
-            const newTrip = {
-                ...formData,
-                distanceMiles: distanceMiles,
-                totalDrivingHours: totalDrivingHours,
-                totalHours: totalHours.toFixed(2),
-                logSchedule: schedule,
-                route: route.geometry,
-                profile: profileData,
-                createdAt: new Date()
-            };
-
-            await addDoc(collection(db, `artifacts/${__app_id}/users/${userId}/trips`), newTrip);
-            setSelectedTrip(newTrip);
-            setMessage('Trip planned and saved successfully!');
-            setMessageType('success');
-            setIsLoading(false);
-        } catch (error) {
-            setMessage("An error occurred. Please try again. Check console for details.");
-            setMessageType('error');
-            console.error("Error during trip planning:", error);
-            setIsLoading(false);
-        }
+      } catch (error) {
+        console.error("Firebase auth error:", error);
+      }
+      setIsAuthReady(true);
     };
+    
+    checkAuth();
 
-    // --- Profile Saving Logic ---
-    const handleProfileSave = async (e) => {
-        e.preventDefault();
-        if (!db || !userId) {
-            setMessage("Authentication is not ready. Please wait.");
-            setMessageType('error');
-            return;
-        }
-        setIsLoading(true);
-        try {
-            const profileDocRef = doc(db, `artifacts/${__app_id}/users/${userId}/profile/userProfile`);
-            await setDoc(profileDocRef, profileData);
-            setMessage("Profile saved successfully!");
-            setMessageType('success');
-        } catch (error) {
-            setMessage("Failed to save profile. Please try again.");
-            setMessageType('error');
-            console.error("Error saving profile:", error);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+      if (user) {
+        setUserId(user.uid);
+      } else {
+        setUserId(null);
+      }
+    });
 
-    // --- ELD Log Canvas Drawing ---
-    const drawEldLog = useCallback((trip, dayIndex) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    return () => unsubscribe();
+  }, []);
 
-        const schedule = trip.logSchedule[dayIndex];
-        if (!schedule) return;
+  // Firestore Data Subscription
+  useEffect(() => {
+    if (db && userId) {
+      const publicTripsRef = collection(db, `artifacts/${__app_id}/public/data/trips`);
+      const unsubscribePublic = onSnapshot(publicTripsRef, (snapshot) => {
+        const trips = [];
+        snapshot.forEach(doc => trips.push({ id: doc.id, ...doc.data() }));
+        setPublicTrips(trips);
+      });
+      return () => unsubscribePublic();
+    }
+  }, [db, userId]);
 
-        const margin = 20;
-        const logHeight = canvas.height - 2 * margin;
-        const logWidth = canvas.width - 2 * margin;
-        const hourMarkerInterval = logWidth / 24;
-        const statusHeight = logHeight / 4;
+  // Mapbox Initialization and Data Drawing
+  useEffect(() => {
+    if (activeTab === 'trips' && tripData && mapContainer.current && !mapInitialized.current) {
+      // Load Mapbox GL JS dynamically
+      const mapboxScript = document.createElement('script');
+      mapboxScript.src = 'https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js';
+      mapboxScript.onload = () => {
+        mapboxgl.current = window.mapboxgl;
+        mapboxgl.current.accessToken = 'pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4M29iczBscDB2em9jZjQyaGYwcmkifQ._1EuZ-gc-p3LB-x_o-Mvvw'; // Placeholder key
 
-        // Draw header
-        ctx.font = '14px Inter, sans-serif';
-        ctx.fillStyle = '#1f2937';
-        ctx.textAlign = 'left';
-        ctx.fillText(`Driver: ${trip.profile?.driverName || 'N/A'}`, margin, 20);
-        ctx.fillText(`Vehicle: ${trip.profile?.vehicleNumber || 'N/A'}`, margin, 40);
-        ctx.fillText(`Home Terminal: ${trip.profile?.homeTerminal || 'N/A'}`, margin, 60);
-        ctx.fillText(`Log Date: Day ${dayIndex + 1}`, margin + 200, 20);
-
-        // Draw hour markers
-        ctx.fillStyle = '#555';
-        ctx.font = '10px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        for (let i = 0; i <= 24; i++) {
-            const x = margin + i * hourMarkerInterval;
-            ctx.moveTo(x, margin + 80);
-            ctx.lineTo(x, canvas.height - margin);
-            ctx.fillText(i, x, margin + 70);
-        }
-
-        // Draw status lines
-        const statuses = ['Off Duty', 'Sleeper Berth', 'Driving', 'On Duty'];
-        ctx.textAlign = 'left';
-        ctx.font = '12px Inter, sans-serif';
-        statuses.forEach((status, index) => {
-            const y = margin + 80 + index * statusHeight;
-            ctx.fillText(status, margin + 5, y + statusHeight / 2 + 5);
+        map.current = new mapboxgl.current.Map({
+          container: mapContainer.current,
+          style: 'mapbox://styles/mapbox/streets-v11',
+          center: tripData.stops[0].coords,
+          zoom: 5
         });
 
-        // Draw log line
-        ctx.beginPath();
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = '#3b82f6';
-        let currentTime = 0;
+        map.current.on('load', () => {
+          const coordinates = tripData.stops.map(stop => stop.coords);
 
-        // Draw Off Duty
-        ctx.moveTo(margin, margin + 80 + 0.5 * statusHeight);
-        currentTime += schedule.offDuty || 0;
-        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 0.5 * statusHeight);
+          tripData.stops.forEach(stop => {
+            new mapboxgl.current.Marker()
+              .setLngLat(stop.coords)
+              .setPopup(new mapboxgl.current.Popup({ offset: 25 }).setHTML(
+                `<div class="font-bold text-gray-800">${stop.type.charAt(0).toUpperCase() + stop.type.slice(1)} Stop</div><div class="text-sm text-gray-600">${stop.location}</div>`
+              ))
+              .addTo(map.current);
+          });
 
-        // Draw Sleeper Berth
-        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 1.5 * statusHeight);
-        currentTime += schedule.sleeper || 0;
-        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 1.5 * statusHeight);
+          map.current.addSource('route', {
+            'type': 'geojson',
+            'data': {
+              'type': 'Feature',
+              'properties': {},
+              'geometry': {
+                'type': 'LineString',
+                'coordinates': coordinates
+              }
+            }
+          });
 
-        // Draw Driving
-        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 2.5 * statusHeight);
-        currentTime += schedule.driving || 0;
-        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 2.5 * statusHeight);
+          map.current.addLayer({
+            'id': 'route',
+            'type': 'line',
+            'source': 'route',
+            'layout': { 'line-join': 'round', 'line-cap': 'round' },
+            'paint': { 'line-color': '#4f46e5', 'line-width': 6, 'line-opacity': 0.7 }
+          });
+          mapInitialized.current = true;
+        });
+      };
+      document.head.appendChild(mapboxScript);
 
-        // Draw On Duty
-        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 3.5 * statusHeight);
-        currentTime += schedule.onDuty || 0;
-        ctx.lineTo(margin + (currentTime * hourMarkerInterval), margin + 80 + 3.5 * statusHeight);
+      // Load Mapbox GL CSS dynamically
+      const mapboxCss = document.createElement('link');
+      mapboxCss.href = 'https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css';
+      mapboxCss.rel = 'stylesheet';
+      document.head.appendChild(mapboxCss);
 
-        ctx.stroke();
-    }, []);
-
-    useEffect(() => {
-        if (activeTab === 'logs' && selectedTrip) {
-            drawEldLog(selectedTrip, currentPage);
+      return () => {
+        if (map.current) {
+          map.current.remove();
+          map.current = null;
         }
-    }, [activeTab, selectedTrip, currentPage, drawEldLog]);
+        mapInitialized.current = false;
+      };
+    }
+  }, [activeTab, tripData]);
 
-    // --- UI Rendering ---
-    const renderPage = () => {
-        switch (activeTab) {
-            case 'home':
-                return (
-                    <div className="flex flex-col lg:flex-row lg:space-x-6">
-                        <div className="lg:w-1/3 mb-6 lg:mb-0 p-6 bg-white rounded-xl shadow-lg border border-gray-200">
-                            <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center space-x-3">
-                                <ClipboardPenLine className="w-6 h-6 text-indigo-600" />
-                                <span>Plan Your Trip</span>
-                            </h2>
-                            <form onSubmit={handlePlanTrip} className="space-y-5">
-                                <div>
-                                    <label htmlFor="pickupLocation" className="block text-sm font-medium text-gray-700">Pickup Location</label>
-                                    <div className="mt-1 flex rounded-lg shadow-sm">
-                                        <input
-                                            type="text"
-                                            id="pickupLocation"
-                                            name="pickupLocation"
-                                            value={formData.pickupLocation}
-                                            onChange={(e) => setFormData(prev => ({ ...prev, pickupLocation: e.target.value }))}
-                                            placeholder="E.g., Dallas, TX"
-                                            required
-                                            className="flex-1 block w-full rounded-l-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 p-3"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={handleLocateMe}
-                                            className="inline-flex items-center px-4 py-3 border border-l-0 border-gray-300 rounded-r-lg bg-gray-50 text-gray-500 hover:bg-gray-100 disabled:opacity-50"
-                                            disabled={isLocating}
-                                        >
-                                            {isLocating ? <Loader className="animate-spin h-5 w-5" /> : <Locate className="h-5 w-5" />}
-                                        </button>
-                                    </div>
-                                    {locationStatus === 'success' && <p className="text-xs text-green-600 mt-1">Location found!</p>}
-                                    {locationStatus === 'error' && <p className="text-xs text-red-600 mt-1">Failed to find location.</p>}
-                                </div>
-                                <div>
-                                    <label htmlFor="dropoffLocation" className="block text-sm font-medium text-gray-700">Dropoff Location</label>
-                                    <input
-                                        type="text"
-                                        id="dropoffLocation"
-                                        name="dropoffLocation"
-                                        value={formData.dropoffLocation}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, dropoffLocation: e.target.value }))}
-                                        placeholder="E.g., Miami, FL"
-                                        required
-                                        className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3"
-                                    />
-                                </div>
-                                <div>
-                                    <label htmlFor="cycleUsed" className="block text-sm font-medium text-gray-700">Current Cycle Used (Hrs)</label>
-                                    <input
-                                        type="number"
-                                        id="cycleUsed"
-                                        name="cycleUsed"
-                                        value={formData.cycleUsed}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, cycleUsed: e.target.value }))}
-                                        placeholder="E.g., 20"
-                                        min="0"
-                                        step="0.1"
-                                        required
-                                        className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3"
-                                    />
-                                </div>
-                                <button
-                                    type="submit"
-                                    disabled={isLoading}
-                                    className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
-                                >
-                                    {isLoading ? (
-                                        <>
-                                            <Loader className="animate-spin -ml-1 mr-3 h-5 w-5" />
-                                            Planning...
-                                        </>
-                                    ) : 'Plan Trip'}
-                                </button>
-                            </form>
-                        </div>
-                        <div className="lg:w-2/3 p-6 bg-white rounded-xl shadow-lg border border-gray-200">
-                            <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center space-x-3">
-                                <MapPin className="w-6 h-6 text-indigo-600" />
-                                <span>Route & Schedule</span>
-                            </h2>
-                            <div ref={mapRef} id="map" className="h-96 rounded-lg mb-4 shadow-inner bg-gray-200"></div>
-                            {selectedTrip && (
-                                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-sm">
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Trip Summary</h3>
-                                    <ul className="space-y-1 text-sm text-gray-700">
-                                        <li className="flex justify-between items-center"><span className="font-medium">Total Distance:</span> <span className="text-indigo-600 font-bold">{selectedTrip.distanceMiles} miles</span></li>
-                                        <li className="flex justify-between items-center"><span className="font-medium">Total Driving Time:</span> <span className="text-indigo-600 font-bold">{selectedTrip.totalDrivingHours} hours</span></li>
-                                        <li className="flex justify-between items-center"><span className="font-medium">Log Sheets Required:</span> <span className="text-indigo-600 font-bold">{selectedTrip.logSchedule.length}</span></li>
-                                    </ul>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                );
-            case 'profile':
-                return (
-                    <div className="w-full p-6 bg-white rounded-xl shadow-lg border border-gray-200">
-                        <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center space-x-3">
-                            <User className="w-6 h-6 text-indigo-600" />
-                            <span>Driver Profile</span>
-                        </h2>
-                        {profileIsLoading ? (
-                            <div className="flex items-center justify-center p-8 text-gray-500">
-                                <Loader className="animate-spin h-6 w-6 mr-3" />
-                                Loading profile...
-                            </div>
-                        ) : (
-                            <form onSubmit={handleProfileSave} className="space-y-5 max-w-xl mx-auto">
-                                <div>
-                                    <label htmlFor="driverName" className="block text-sm font-medium text-gray-700">Driver Name</label>
-                                    <input
-                                        type="text"
-                                        id="driverName"
-                                        name="driverName"
-                                        value={profileData.driverName}
-                                        onChange={(e) => setProfileData(prev => ({ ...prev, driverName: e.target.value }))}
-                                        placeholder="Your Name"
-                                        required
-                                        className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3"
-                                    />
-                                </div>
-                                <div>
-                                    <label htmlFor="vehicleNumber" className="block text-sm font-medium text-gray-700">Vehicle Number</label>
-                                    <input
-                                        type="text"
-                                        id="vehicleNumber"
-                                        name="vehicleNumber"
-                                        value={profileData.vehicleNumber}
-                                        onChange={(e) => setProfileData(prev => ({ ...prev, vehicleNumber: e.target.value }))}
-                                        placeholder="Truck ID or License Plate"
-                                        required
-                                        className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3"
-                                    />
-                                </div>
-                                <div>
-                                    <label htmlFor="homeTerminal" className="block text-sm font-medium text-gray-700">Home Terminal Address</label>
-                                    <input
-                                        type="text"
-                                        id="homeTerminal"
-                                        name="homeTerminal"
-                                        value={profileData.homeTerminal}
-                                        onChange={(e) => setProfileData(prev => ({ ...prev, homeTerminal: e.target.value }))}
-                                        placeholder="E.g., 123 Trucking Lane, Dallas, TX"
-                                        className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-3"
-                                    />
-                                </div>
-                                <button
-                                    type="submit"
-                                    disabled={isLoading}
-                                    className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
-                                >
-                                    {isLoading ? (
-                                        <>
-                                            <Loader className="animate-spin -ml-1 mr-3 h-5 w-5" />
-                                            Saving...
-                                        </>
-                                    ) : 'Save Profile'}
-                                </button>
-                            </form>
-                        )}
-                    </div>
-                );
-            case 'logs':
-                return (
-                    <div className="flex flex-col lg:flex-row lg:space-x-6">
-                        <div className="lg:w-1/3 mb-6 lg:mb-0 p-6 bg-white rounded-xl shadow-lg border border-gray-200">
-                            <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center space-x-3">
-                                <ListChecks className="w-6 h-6 text-indigo-600" />
-                                <span>Planned Trips</span>
-                            </h2>
-                            {tripData.length === 0 ? (
-                                <p className="text-gray-500 text-sm text-center">No trips planned yet. Go to the "Plan Trip" tab to get started!</p>
-                            ) : (
-                                <ul className="space-y-3 max-h-96 overflow-y-auto pr-2">
-                                    {tripData.map(trip => (
-                                        <li
-                                            key={trip.id}
-                                            onClick={() => { setSelectedTrip(trip); setCurrentPage(0); }}
-                                            className={`cursor-pointer p-4 rounded-lg border transition-colors duration-200 ${selectedTrip?.id === trip.id ? 'bg-indigo-50 border-indigo-500 shadow-lg' : 'bg-gray-50 hover:bg-gray-100 border-gray-200'}`}
-                                        >
-                                            <div className="text-base font-semibold text-gray-900">{trip.pickupLocation} to {trip.dropoffLocation}</div>
-                                            <div className="text-xs text-gray-500 mt-1">
-                                                <span>Planned: {new Date(trip.createdAt.seconds * 1000).toLocaleDateString()}</span>
-                                                <span className="ml-2">({trip.distanceMiles} mi)</span>
-                                            </div>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                        </div>
-                        <div className="lg:w-2/3 p-6 bg-white rounded-xl shadow-lg border border-gray-200">
-                            <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center space-x-3">
-                                <BookA className="w-6 h-6 text-indigo-600" />
-                                <span>ELD Log Sheet</span>
-                            </h2>
-                            {selectedTrip ? (
-                                <div>
-                                    <div className="mb-4 text-center">
-                                        <p className="text-lg font-semibold text-gray-800">Log Sheet for Day {currentPage + 1}</p>
-                                        <p className="text-sm text-gray-600">Trip from <span className="text-indigo-600 font-bold">{selectedTrip.pickupLocation}</span> to <span className="text-indigo-600 font-bold">{selectedTrip.dropoffLocation}</span></p>
-                                    </div>
-                                    <div className="overflow-x-auto">
-                                        <canvas ref={canvasRef} width="1000" height="300" className="bg-white border rounded-lg shadow-inner"></canvas>
-                                    </div>
-                                    <div className="flex justify-center mt-4 space-x-4">
-                                        <button
-                                            onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
-                                            disabled={currentPage === 0}
-                                            className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-medium disabled:opacity-50 hover:bg-indigo-700 transition-colors"
-                                        >Previous Day</button>
-                                        <button
-                                            onClick={() => setCurrentPage(prev => Math.min(selectedTrip.logSchedule.length - 1, prev + 1))}
-                                            disabled={currentPage === selectedTrip.logSchedule.length - 1}
-                                            className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-medium disabled:opacity-50 hover:bg-indigo-700 transition-colors"
-                                        >Next Day</button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="text-center p-8 text-gray-500">
-                                    Select a trip from the list to view its ELD log.
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                );
-            case 'reports':
-                return (
-                    <div className="w-full p-6 bg-white rounded-xl shadow-lg border border-gray-200">
-                        <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center space-x-3">
-                            <TrendingUp className="w-6 h-6 text-indigo-600" />
-                            <span>Trip Reports</span>
-                        </h2>
-                        {tripData.length === 0 ? (
-                            <p className="text-gray-500 text-center">No trip data available to generate reports.</p>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full divide-y divide-gray-200 rounded-lg overflow-hidden">
-                                    <thead className="bg-gray-100">
-                                        <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Origin</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Destination</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Distance (mi)</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Driving (hrs)</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Log Sheets</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-gray-200">
-                                        {tripData.map(trip => (
-                                            <tr key={trip.id} className="hover:bg-gray-50 transition-colors">
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{trip.pickupLocation}</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{trip.dropoffLocation}</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{trip.distanceMiles}</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{trip.totalDrivingHours}</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{trip.logSchedule.length}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
-                );
-            default:
-                return null;
+  // Canvas Drawing for ELD Logs
+  useEffect(() => {
+    if (activeTab === 'logs' && tripData) {
+      tripData.dailyLogs.forEach((log, index) => {
+        drawLogOnCanvas(`log-canvas-${index}`, log);
+      });
+    }
+  }, [activeTab, tripData]);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const clearMessage = () => {
+    setMessage(null);
+  };
+  
+  const handleGetLocation = () => {
+    setIsLocating(true);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setFormData(prev => ({ ...prev, currentLocation: `${position.coords.latitude}, ${position.coords.longitude}` }));
+          setMessage({ type: 'success', text: 'Current location found!' });
+          setIsLocating(false);
+        },
+        (error) => {
+          setMessage({ type: 'error', text: 'Unable to retrieve location.' });
+          setIsLocating(false);
+          console.error("Geolocation error:", error);
         }
-    };
+      );
+    } else {
+      setMessage({ type: 'error', text: 'Geolocation is not supported by your browser.' });
+      setIsLocating(false);
+    }
+  };
 
-    return (
-        <div className="min-h-screen bg-gray-100 font-inter text-gray-800 p-4 sm:p-8 antialiased">
-            <style>
-                {`
-                body { font-family: 'Inter', sans-serif; }
-                #map { min-height: 400px; }
-                .antialiased { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-                @keyframes spin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                }
-                .animate-spin { animation: spin 1s linear infinite; }
-                ::-webkit-scrollbar { width: 8px; }
-                ::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 4px; }
-                ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
-                ::-webkit-scrollbar-thumb:hover { background: #64748b; }
-                `}
-            </style>
-            <script src="https://cdn.tailwindcss.com"></script>
-            <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
-            <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet" />
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-
-            <header className="mb-8 flex flex-col sm:flex-row justify-between items-center">
-                <div className="flex items-center space-x-3">
-                    <Truck className="h-10 w-10 text-indigo-600" />
-                    <h1 className="text-4xl font-extrabold text-gray-900">FleetTrack</h1>
-                </div>
-                {userId && (
-                    <div className="mt-4 sm:mt-0 flex items-center space-x-2 text-sm text-gray-600 p-2 bg-white rounded-lg shadow-sm border border-gray-200">
-                        <span>User ID: <span className="font-mono text-gray-700 break-all">{userId}</span></span>
-                    </div>
-                )}
-            </header>
-
-            <nav className="mb-8 bg-white p-2 rounded-xl shadow-lg border border-gray-200">
-                <ul className="flex flex-wrap justify-around sm:justify-start sm:space-x-4">
-                    <li>
-                        <button
-                            onClick={() => setActiveTab('home')}
-                            className={`flex items-center space-x-2 px-6 py-3 rounded-full transition-colors duration-200 ${activeTab === 'home' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'}`}
-                        >
-                            <ClipboardPenLine className="h-5 w-5" />
-                            <span className="font-medium">Plan Trip</span>
-                        </button>
-                    </li>
-                    <li>
-                        <button
-                            onClick={() => setActiveTab('logs')}
-                            className={`flex items-center space-x-2 px-6 py-3 rounded-full transition-colors duration-200 ${activeTab === 'logs' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'}`}
-                        >
-                            <ListChecks className="h-5 w-5" />
-                            <span className="font-medium">ELD Logs</span>
-                        </button>
-                    </li>
-                    <li>
-                        <button
-                            onClick={() => setActiveTab('reports')}
-                            className={`flex items-center space-x-2 px-6 py-3 rounded-full transition-colors duration-200 ${activeTab === 'reports' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'}`}
-                        >
-                            <TrendingUp className="h-5 w-5" />
-                            <span className="font-medium">Reports</span>
-                        </button>
-                    </li>
-                    <li>
-                        <button
-                            onClick={() => setActiveTab('profile')}
-                            className={`flex items-center space-x-2 px-6 py-3 rounded-full transition-colors duration-200 ${activeTab === 'profile' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'}`}
-                        >
-                            <User className="h-5 w-5" />
-                            <span className="font-medium">Profile</span>
-                        </button>
-                    </li>
-                </ul>
-            </nav>
-
-            <main className="p-6 rounded-xl">
-                {message && (
-                    <div className={`flex items-center p-4 mb-4 rounded-lg text-white font-medium ${messageType === 'success' ? 'bg-green-500' : 'bg-red-500'}`}>
-                        {messageType === 'success' ? <CheckCircle className="h-5 w-5 mr-2" /> : <XCircle className="h-5 w-5 mr-2" />}
-                        {message}
-                    </div>
-                )}
-                {renderPage()}
-            </main>
+  const renderContent = () => {
+    if (!isAuthReady) {
+      return (
+        <div className="flex items-center justify-center p-8">
+          <Loader className="animate-spin text-indigo-600" />
+          <span className="ml-2 text-lg text-gray-700">Loading application...</span>
         </div>
-    );
+      );
+    }
+    
+    switch (activeTab) {
+      case 'plan':
+        return (
+          <div className="p-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Plan a New Trip</h2>
+            <form onSubmit={(e) => { e.preventDefault(); handlePlanTrip(); }} className="space-y-4">
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="flex-1">
+                  <label className="block text-gray-700 font-medium mb-1" htmlFor="currentLocation">
+                    Current Location
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="currentLocation"
+                      name="currentLocation"
+                      type="text"
+                      className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-indigo-500 pr-10"
+                      value={formData.currentLocation}
+                      onChange={handleInputChange}
+                      placeholder="e.g., Chicago, IL"
+                      disabled={isLocating || isLoading}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleGetLocation}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-indigo-600 transition-colors"
+                      disabled={isLocating || isLoading}
+                    >
+                      {isLocating ? <Loader className="animate-spin" size={20} /> : <LocateFixed size={20} />}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-gray-700 font-medium mb-1" htmlFor="pickupLocation">
+                    Pickup Location
+                  </label>
+                  <input
+                    id="pickupLocation"
+                    name="pickupLocation"
+                    type="text"
+                    className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-indigo-500"
+                    value={formData.pickupLocation}
+                    onChange={handleInputChange}
+                    placeholder="e.g., Los Angeles, CA"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="flex-1">
+                  <label className="block text-gray-700 font-medium mb-1" htmlFor="dropoffLocation">
+                    Dropoff Location
+                  </label>
+                  <input
+                    id="dropoffLocation"
+                    name="dropoffLocation"
+                    type="text"
+                    className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-indigo-500"
+                    value={formData.dropoffLocation}
+                    onChange={handleInputChange}
+                    placeholder="e.g., New York, NY"
+                    required
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-gray-700 font-medium mb-1" htmlFor="cycleUsed">
+                    Current Cycle Used (Hrs)
+                  </label>
+                  <input
+                    id="cycleUsed"
+                    name="cycleUsed"
+                    type="number"
+                    min="0"
+                    max="70"
+                    className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-indigo-500"
+                    value={formData.cycleUsed}
+                    onChange={handleInputChange}
+                    placeholder="e.g., 20"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-indigo-600 text-white font-semibold py-3 px-6 rounded-md shadow-lg hover:bg-indigo-700 transition-colors duration-300 flex items-center justify-center"
+                disabled={isLoading}
+              >
+                {isLoading ? <Loader className="animate-spin mr-2" /> : <ArrowRightCircle className="mr-2" />}
+                Plan Trip
+              </button>
+            </form>
+            {message && (
+              <div className={`mt-6 p-4 rounded-md flex items-center ${message.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                {message.type === 'success' ? <CheckCircle className="mr-2" /> : <XCircle className="mr-2" />}
+                <span>{message.text}</span>
+              </div>
+            )}
+          </div>
+        );
+      case 'trips':
+        return (
+          <div className="p-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Trip & Route</h2>
+            {tripData ? (
+              <div className="space-y-6">
+                <div className="bg-gray-50 p-4 rounded-lg shadow-inner">
+                  <p className="font-semibold text-gray-700">
+                    <MapPin className="inline mr-2" size={16} />
+                    From: <span className="text-indigo-600">{formData.pickupLocation}</span> to <span className="text-indigo-600">{formData.dropoffLocation}</span>
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    <Gauge className="inline mr-2" size={16} />
+                    Distance: <span className="font-semibold">{tripData.distance} mi</span>
+                    <span className="ml-4"><Calendar className="inline mr-2" size={16} />Estimated Time: <span className="font-semibold">{tripData.estimatedTime} hrs</span></span>
+                  </p>
+                </div>
+                <div id="map" ref={mapContainer} className="w-full h-96 rounded-lg shadow-md"></div>
+              </div>
+            ) : (
+              <div className="text-center p-8 text-gray-500">
+                <Info size={48} className="mx-auto mb-4" />
+                <p>No trip data to display. Plan a trip on the "Plan Trip" tab.</p>
+              </div>
+            )}
+          </div>
+        );
+      case 'logs':
+        return (
+          <div className="p-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Daily ELD Logs</h2>
+            {tripData ? (
+              <div className="space-y-8">
+                {tripData.dailyLogs.map((log, index) => (
+                  <div key={index} className="bg-white p-6 rounded-lg shadow-md">
+                    <h3 className="text-xl font-semibold text-gray-800 mb-4">Day {index + 1} Log Sheet</h3>
+                    <div className="grid grid-cols-2 gap-2 text-gray-700 mb-4">
+                      <p><strong>Driving:</strong> {log.driving.toFixed(2)} hrs</p>
+                      <p><strong>On Duty:</strong> {log.onDuty.toFixed(2)} hrs</p>
+                      <p><strong>Sleeper:</strong> {log.sleeperBerth.toFixed(2)} hrs</p>
+                      <p><strong>Off Duty:</strong> {log.offDuty.toFixed(2)} hrs</p>
+                    </div>
+                    <canvas id={`log-canvas-${index}`} width="800" height="200" className="mt-4 border rounded-md"></canvas>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center p-8 text-gray-500">
+                <Info size={48} className="mx-auto mb-4" />
+                <p>No log data to display. Plan a trip on the "Plan Trip" tab.</p>
+              </div>
+            )}
+          </div>
+        );
+      case 'public-trips':
+        return (
+          <div className="p-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Public Trips</h2>
+            <div className="text-sm text-gray-600 mb-4">
+              <span className="font-semibold">Your User ID:</span> <span className="font-mono">{userId}</span>
+            </div>
+            {publicTrips.length > 0 ? (
+              <div className="space-y-4">
+                {publicTrips.map((trip) => (
+                  <div key={trip.id} className="bg-white p-4 rounded-lg shadow-md">
+                    <p className="font-semibold text-gray-800">Trip from: {trip.formData.pickupLocation}</p>
+                    <p className="font-semibold text-gray-800">Trip to: {trip.formData.dropoffLocation}</p>
+                    <p className="text-sm text-gray-600">Distance: {trip.distance} mi</p>
+                    <p className="text-sm text-gray-600 font-mono">User ID: {trip.userId}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center p-8 text-gray-500">
+                <Info size={48} className="mx-auto mb-4" />
+                <p>No public trip data available.</p>
+              </div>
+            )}
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const navItemClass = (tab) =>
+    `px-4 py-2 rounded-full transition-colors duration-200 ${
+      activeTab === tab
+        ? 'bg-indigo-600 text-white shadow-md'
+        : 'text-gray-600 hover:text-indigo-600'
+    }`;
+  
+  return (
+    <div className="min-h-screen bg-gray-100 font-sans antialiased flex flex-col">
+      <div className="bg-white shadow-lg p-4 flex flex-col md:flex-row justify-between items-center fixed top-0 left-0 w-full z-10">
+        <div className="flex items-center space-x-2">
+          <Truck className="text-indigo-600" size={32} />
+          <h1 className="text-2xl font-extrabold text-gray-800">
+            Trip Planner
+          </h1>
+        </div>
+        <nav className="mt-4 md:mt-0">
+          <ul className="flex space-x-2 md:space-x-4 text-sm md:text-base">
+            <li><button onClick={() => setActiveTab('plan')} className={navItemClass('plan')}>Plan Trip</button></li>
+            <li><button onClick={() => setActiveTab('trips')} className={navItemClass('trips')}>Trips</button></li>
+            <li><button onClick={() => setActiveTab('logs')} className={navItemClass('logs')}>Logs</button></li>
+            <li><button onClick={() => setActiveTab('public-trips')} className={navItemClass('public-trips')}>Public Trips</button></li>
+          </ul>
+        </nav>
+      </div>
+
+      <main className="flex-1 container mx-auto p-4 md:p-8 pt-24">
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+          {renderContent()}
+        </div>
+      </main>
+
+      {/* Tailwind CSS Script CDN */}
+      <script src="https://cdn.tailwindcss.com"></script>
+    </div>
+  );
 };
 
 export default App;
