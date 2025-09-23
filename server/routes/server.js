@@ -36,7 +36,13 @@ app.use('/api/patch-registry', require('./routes/patchRegistry'));
 app.use('/api/toggles', require('./routes/toggles'));
 app.use('/api/feature-audit', require('./routes/featureAudit'));
 app.use('/api/deployment-timeline', require('./routes/deploymentTimeline'));
- 
+app.use('/api/admin/users', require('./routes/adminUsers'));
+app.use('/api/trips', require('./routes/trips'));
+app.use('/api/fleet-summary', require('./routes/fleetSummary'));
+app.use('/api/compliance-score', require('./routes/complianceScore'));
+app.use('/api/incidents', require('./routes/incidents'));
+
+
 // Healthcheck
 app.get('/api/health', (req, res) => {
   res.json({ status: 'FleetTrack v3.0 backend is live 🚀' });
