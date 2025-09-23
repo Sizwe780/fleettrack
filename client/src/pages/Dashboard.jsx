@@ -234,8 +234,7 @@ const Dashboard = () => {
         )}
 
         {/* Grouped Trips */}
-                {/* Grouped Trips */}
-                {Object.entries(groupedTrips).map(([group, trips]) => (
+        {Object.entries(groupedTrips).map(([group, trips]) => (
           trips.length > 0 && (
             <div key={group} className="space-y-4 mb-8">
               <h2 className="text-xl font-bold capitalize">
@@ -251,7 +250,7 @@ const Dashboard = () => {
                     onComplete={handleCompleteTrip}
                     isOffline={!navigator.onLine}
                     isSelected={false}
-                    onSelect={() => {}}
+                    onSelect={() => { }}
                     routeSuggestion={routeSuggestion}
                   />
                 );
