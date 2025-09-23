@@ -16,7 +16,7 @@ export default function TripSubmissionForm() {
 
   const handleSubmit = async e => {
     e.preventDefault();
-    const res = await fetch('/api/trips', {
+    const res = await fetch('/api/trips/submit', { // Change to the new, more specific route
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form)
@@ -27,7 +27,7 @@ export default function TripSubmissionForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 bg-white p-4 rounded shadow">
-      <h3 className="text-lg font-bold">📍 Submit Trip</h3>
+      <h3 className="text-lg font-bold"> 📍  Submit Trip</h3>
       <input type="text" placeholder="Driver ID" value={form.driverId}
         onChange={e => handleChange('driverId', e.target.value)} className="w-full border px-3 py-2 rounded" />
       <input type="text" placeholder="Start Location" value={form.startLocation}
