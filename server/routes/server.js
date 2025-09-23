@@ -31,7 +31,9 @@ app.use('/api/toggles', require('./routes/toggles'));
 app.use('/api/feature-audit', require('./routes/featureAudit'));
 app.use('/api/deployment-timeline', require('./routes/deploymentTimeline'));
 app.use('/api/admin/users', require('./routes/adminUsers'));
-app.use('/api/trips/submit', require('./routes/trips')); // 💡 Add this new route
+app.use('/api/trips/submit', require('./routes/trips')); // 💡 This is the correct route
+// ❌ You MUST find and remove the duplicate line like this one:
+// app.use('/api/trips', require('./routes/trips'));
 app.use('/api/fleet-summary', require('./routes/fleetSummary'));
 app.use('/api/compliance-score', require('./routes/complianceScore'));
 app.use('/api/incidents', require('./routes/incidents'));
