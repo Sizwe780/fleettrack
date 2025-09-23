@@ -18,7 +18,7 @@ const TripDashboard = ({
   isOffline = false,
   routeSuggestion
 }) => {
-  if (!trip) return null;
+  if (!trip || typeof trip !== 'object') return null;
 
   const {
     origin = 'Unknown Origin',
@@ -141,14 +141,14 @@ const TripDashboard = ({
       </div>
 
       {/* Maintenance Predictor */}
-      {vehicleStats && (
+      {vehicleStats && Object.keys(vehicleStats).length > 0 && (
         <div className="mb-4">
           <MaintenancePredictor vehicleStats={vehicleStats} />
         </div>
       )}
 
       {/* Driver Sentiment */}
-      {remarks.length > 0 && (
+      {Array.isArray(remarks) && remarks.length > 0 && (
         <div className="mb-2">
           <DriverSentiment trip={trip} />
         </div>
@@ -162,14 +162,15 @@ const TripDashboard = ({
       )}
 
       {/* Trip Replay */}
-      {coordinates.length > 0 && statusHistory.length > 0 && (
+      {Array.isArray(coordinates) && coordinates.length > 0 &&
+       Array.isArray(statusHistory) && statusHistory.length > 0 && (
         <div className="mb-4">
           <TripReplay trip={trip} />
         </div>
       )}
 
       {/* Trip Timeline */}
-      {statusHistory.length > 0 && (
+      {Array.isArray(statusHistory) && statusHistory.length > 0 && (
         <TripTimeline statusHistory={statusHistory} />
       )}
 
@@ -198,7 +199,7 @@ const TripDashboard = ({
       )}
 
       {/* Remarks */}
-      {remarks.length > 0 && (
+      {Array.isArray(remarks) && remarks.length > 0 && (
         <details className="mb-2 text-sm text-gray-700">
           <summary className="cursor-pointer font-medium">Trip Remarks</summary>
           <ul className="list-disc ml-4 mt-1">
