@@ -13,7 +13,7 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 // All other routes remain the same...
-app.use('/api/trips', require('./routes/trips')); // Only keep this one.
+app.use('/api/trips/submit', require('./routes/trips')); // Only keep this one.
 // You must remove the duplicate line from your code.
 app.use('/api/fleet-summary', require('./routes/fleetSummary'));
 app.use('/api/compliance-score', require('./routes/complianceScore'));
