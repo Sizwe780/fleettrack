@@ -48,7 +48,10 @@ const TripPlanner = ({ userId, onTripCreated }) => {
         driver_name: newTripData.driver_name,
         date: newTripData.date,
         departureTime: newTripData.departureTime,
-        routeData: newTripData.routeData,
+        routeData: {
+          path: JSON.stringify(newTripData.routeData.path), // ✅ Serialize nested array
+          estimatedTime: newTripData.routeData.estimatedTime,
+        },
         analysis: {
           profitability: newTripData.analysis?.profitability ?? null,
           ifta: newTripData.analysis?.ifta ?? null,
