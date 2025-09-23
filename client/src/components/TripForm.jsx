@@ -3,7 +3,7 @@ import axios from 'axios';
 import { addDoc, collection } from 'firebase/firestore';
 import { db } from '../firebase';
 
-const TripForm = ({ userId }) => {
+const TripForm = ({ userId, onTripCreated }) => {
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   const [date, setDate] = useState('');
@@ -14,7 +14,6 @@ const TripForm = ({ userId }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
 
-  // Auto-fetch current location
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -49,7 +48,7 @@ const TripForm = ({ userId }) => {
       const analysisRes = await axios.post(`${process.env.REACT_APP_API_URL}/api/calculate-trip/`, tripData);
       const analysis = analysisRes.data;
 
-      // Step 2: Save to Django
+      // Step 2: Save to Django backend
       const fullTrip = {
         ...tripData,
         analysis,
@@ -58,15 +57,26 @@ const TripForm = ({ userId }) => {
 
       await axios.post(`${process.env.REACT_APP_API_URL}/api/trips/`, fullTrip);
 
-      // Step 3: Save to Firestore under user scope
+      // Step 3: Save to Firestore with full module data
       const path = `apps/fleet-track-app/users/${userId}/trips`;
-      await addDoc(collection(db, path), {
+      const enrichedTrip = {
         ...fullTrip,
         status: 'pending',
-        driver_uid: userId
-      });
+        driver_uid: userId,
+        remarks: analysis.remarks ?? [],
+        healthScore: analysis.healthScore ?? 100,
+        statusHistory: analysis.statusHistory ?? [],
+        vehicleStats: analysis.vehicleStats ?? {},
+        driverStats: analysis.driverStats ?? {},
+        coordinates: analysis.routeData?.geometry?.coordinates ?? []
+      };
 
-      // Step 4: Reset form
+      await addDoc(collection(db, path), enrichedTrip);
+
+      // Step 4: Notify parent (optional)
+      if (onTripCreated) onTripCreated(enrichedTrip);
+
+      // Step 5: Reset form
       setOrigin('');
       setDestination('');
       setDate('');

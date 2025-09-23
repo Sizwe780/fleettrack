@@ -22,12 +22,14 @@ ChartJS.register(
 );
 
 const FuelTrendChart = ({ data }) => {
+  const safeData = Array.isArray(data) ? data : [];
+
   const chartData = {
-    labels: data.map(trip => new Date(trip.date).toLocaleDateString()),
+    labels: safeData.map(trip => new Date(trip.date).toLocaleDateString()),
     datasets: [
       {
         label: 'Fuel Used (gallons)',
-        data: data.map(trip => trip.fuelUsed),
+        data: safeData.map(trip => trip.fuelUsed ?? 0),
         borderColor: 'rgb(75, 192, 192)',
         backgroundColor: 'rgba(75, 192, 192, 0.5)',
       },
@@ -37,13 +39,8 @@ const FuelTrendChart = ({ data }) => {
   const options = {
     responsive: true,
     plugins: {
-      legend: {
-        position: 'top',
-      },
-      title: {
-        display: true,
-        text: 'Fuel Trend Over Time',
-      },
+      legend: { position: 'top' },
+      title: { display: true, text: 'Fuel Trend Over Time' },
     },
   };
 
