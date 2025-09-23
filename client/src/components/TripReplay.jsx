@@ -1,32 +1,42 @@
-import React, { useEffect, useState } from 'react';
-import MapReplay from './MapReplay'; // Your animated map component
+import React, { useEffect } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
-const TripReplay = ({ trip }) => {
-  const [replayData, setReplayData] = useState([]);
-
+export default function TripReplay({ coordinates }) {
   useEffect(() => {
-    if (!trip?.coordinates || trip.coordinates.length === 0) return;
+    if (!coordinates || coordinates.length === 0) return;
 
-    const enriched = trip.coordinates.map((coord, i) => ({
-      lat: Array.isArray(coord) ? coord[0] : coord.lat,
-      lng: Array.isArray(coord) ? coord[1] : coord.lng,
-      timestamp: trip.statusHistory?.[i]?.timestamp || null,
-      status: trip.statusHistory?.[i]?.status || null
-    }));
+    const map = L.map('trip-map').setView(coordinates[0], 13);
 
-    setReplayData(enriched);
-  }, [trip]);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: 'FleetTrack Replay • OpenStreetMap'
+    }).addTo(map);
+
+    const route = L.polyline(coordinates, { color: 'blue' }).addTo(map);
+    map.fitBounds(route.getBounds());
+
+    const marker = L.marker(coordinates[0]).addTo(map);
+    let i = 0;
+
+    const interval = setInterval(() => {
+      if (i < coordinates.length) {
+        marker.setLatLng(coordinates[i]);
+        i++;
+      } else {
+        clearInterval(interval);
+      }
+    }, 500);
+
+    return () => {
+      map.remove();
+      clearInterval(interval);
+    };
+  }, [coordinates]);
 
   return (
-    <div className="p-4 bg-white rounded-xl shadow-md border">
-      <h2 className="text-xl font-bold mb-4">Trip Replay</h2>
-      {replayData.length > 0 ? (
-        <MapReplay points={replayData} />
-      ) : (
-        <p className="text-gray-500">No replay data available for this trip.</p>
-      )}
+    <div className="mt-6">
+      <h3 className="text-lg font-semibold mb-2">▶️ Trip Replay</h3>
+      <div id="trip-map" className="h-64 rounded border" />
     </div>
   );
-};
-
-export default TripReplay;
+}

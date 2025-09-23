@@ -1,315 +1,140 @@
 import React, { useEffect, useState } from 'react';
-import TripTimeline from './TripTimeline';
-import { MapPin, Clock, WifiOff, Route, AlertTriangle } from 'lucide-react';
-import TripMap from './TripMap';
-import KPIBadge from './KPIBadge';
-import TripScoreBadge from './TripScoreBadge';
-import scoreTrip from '../utils/tripScorer';
-import MaintenancePredictor from './MaintenancePredictor';
-import DriverSentiment from './DriverSentiment';
-import TripReplay from './TripReplay';
-import DriverBadges from './DriverBadges';
-import AuditTrailViewer from './AuditTrailViewer';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { collection, getDocs, setDoc, doc, addDoc } from 'firebase/firestore';
+import TripReplay from './TripReplay';
+// import FleetHeatmap from './FleetHeatmap'; // Optional
+// import DriverLeaderboard from './DriverLeaderboard'; // Optional
 
-const TripDashboard = ({
-  trip,
-  onSelect,
-  isSelected,
-  onComplete,
-  isOffline = false,
-  routeSuggestion
-}) => {
-  if (!trip || typeof trip !== 'object') return null;
-
-  const {
-    origin = 'Unknown Origin',
-    destination = 'Unknown Destination',
-    date = 'Unknown Date',
-    driver_name = 'Unassigned',
-    analysis = {},
-    coordinates = [],
-    healthScore = null,
-    status = 'pending',
-    breakTaken = true,
-    remarks = [],
-    completedAt = null,
-    statusHistory = [],
-    vehicleStats = {},
-    driverStats = {},
-    driver_uid,
-    id
-  } = trip;
-
-  const revenue = analysis?.profitability?.revenue ?? 0;
-  const profit = analysis?.profitability?.netProfit ?? 0;
-  const distance = analysis?.profitability?.distanceMiles ?? 0;
-  const fuelUsed = analysis?.ifta?.fuelUsed ?? 0;
-
-  const formattedDate = new Date(date).toLocaleDateString('en-ZA', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  });
-
-  const getHealthColor = (score) => {
-    if (score >= 80) return 'bg-green-100 text-green-700';
-    if (score >= 50) return 'bg-yellow-100 text-yellow-700';
-    return 'bg-red-100 text-red-700';
-  };
-
-  const getStatusBadge = () => {
-    let label = status.charAt(0).toUpperCase() + status.slice(1);
-    let color = 'bg-gray-200 text-gray-700';
-
-    if (status === 'completed') color = 'bg-green-100 text-green-700';
-    else if (status === 'flagged') color = 'bg-yellow-100 text-yellow-700';
-    else if (status === 'critical' || healthScore < 50 || !breakTaken) {
-      label = 'Critical';
-      color = 'bg-red-100 text-red-700';
-    }
-
-    return (
-      <span className={`inline-block px-2 py-1 text-xs rounded ${color}`}>
-        {label}
-      </span>
-    );
-  };
-
-  const score = scoreTrip(trip);
-  const isCritical = healthScore < 50 || status === 'critical';
-
-  const enrichedDriverStats = {
-    totalTrips: driverStats.totalTrips ?? 0,
-    violationCount: driverStats.violationCount ?? 0,
-    avgHealthScore: driverStats.avgHealthScore ?? healthScore ?? 0,
-    avgProfit: driverStats.avgProfit ?? profit ?? 0
-  };
-
-  const [auditTrail, setAuditTrail] = useState([]);
-  const [overrideMode, setOverrideMode] = useState(false);
+export default function TripDashboard({ userId }) {
+  const [trips, setTrips] = useState([]);
+  const [showReplay, setShowReplay] = useState(null);
 
   useEffect(() => {
-    const fetchAuditTrail = async () => {
-      if (!id || !driver_uid) return;
-      const path = `apps/fleet-track-app/users/${driver_uid}/trips/${id}/auditTrail`;
-      const snapshot = await getDocs(collection(db, path));
-      const entries = snapshot.docs.map(doc => doc.data());
-      setAuditTrail(entries);
-    };
-
-    fetchAuditTrail();
-  }, [id, driver_uid]);
-
-  const handleOverrideStatus = async (newStatus) => {
-    const path = `apps/fleet-track-app/users/${driver_uid}/trips/${id}`;
-    await setDoc(doc(db, path), {
-      status: newStatus,
-      statusHistory: [...(statusHistory ?? []), {
-        status: newStatus,
-        timestamp: new Date().toISOString()
-      }]
-    }, { merge: true });
-
-    await addDoc(collection(db, `${path}/auditTrail`), {
-      action: `Status overridden to ${newStatus}`,
-      actor: 'admin',
-      timestamp: new Date().toISOString(),
-      reason: 'Manual override via Admin Console'
+    const path = `apps/fleet-track-app/users/${userId}/trips`;
+    const unsubscribe = onSnapshot(collection(db, path), (snapshot) => {
+      const entries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const sorted = entries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      setTrips(sorted);
     });
 
-    setOverrideMode(false);
-  };
+    return () => unsubscribe();
+  }, [userId]);
+
+  const avgHealthScore = Math.round(
+    trips.reduce((sum, t) => sum + (t.healthScore ?? 0), 0) / (trips.length || 1)
+  );
+
+  const avgProfit = Math.round(
+    trips.reduce((sum, t) => sum + (t.analysis?.profitability?.netProfit ?? 0), 0) / (trips.length || 1)
+  );
+
+  const flaggedTrips = trips.filter(t => t.status === 'critical');
 
   return (
-    <div
-      className={`bg-white p-4 rounded-xl shadow-md border transition ${
-        isSelected ? 'ring-2 ring-blue-500' : 'hover:shadow-lg'
-      }`}
-    >
-      {/* Header */}
-      <div className="flex justify-between items-center mb-2">
-        <h3 className="text-xl font-bold">
-          {origin} → {destination}
-        </h3>
-        <div className="flex items-center gap-2">
-          {getStatusBadge()}
-          {isOffline && (
-            <span className="inline-flex items-center gap-1 text-xs text-gray-500">
-              <WifiOff className="w-4 h-4" /> Offline
-            </span>
-          )}
-          <button
-            onClick={onSelect}
-            className={`px-3 py-1 text-sm rounded ${
-              isSelected ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
-            }`}
-          >
-            {isSelected ? 'Selected' : 'Compare'}
-          </button>
+    <div className="max-w-6xl mx-auto mt-10 space-y-8">
+      <h2 className="text-2xl font-bold">🚚 Fleet Intelligence Console</h2>
+
+      {/* Fleet Health Summary */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-6">
+        <div className="bg-green-50 p-3 rounded">
+          <p className="font-semibold">Avg Fleet Score</p>
+          <p>{avgHealthScore}/100</p>
+        </div>
+        <div className="bg-blue-50 p-3 rounded">
+          <p className="font-semibold">Trips This Month</p>
+          <p>{trips.length}</p>
+        </div>
+        <div className="bg-yellow-50 p-3 rounded">
+          <p className="font-semibold">Flagged Trips</p>
+          <p>{flaggedTrips.length}</p>
+        </div>
+        <div className="bg-purple-50 p-3 rounded">
+          <p className="font-semibold">Avg Profit</p>
+          <p>R{avgProfit}</p>
         </div>
       </div>
 
-      {/* Critical Alert */}
-      {isCritical && (
-        <div className="mb-2 p-2 bg-red-100 text-red-700 rounded-md text-sm font-semibold flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4" />
-          This trip has been flagged due to low health score.
-        </div>
-      )}
+      {/* Optional Modules */}
+      {/* <FleetHeatmap trips={trips} /> */}
+      {/* <DriverLeaderboard trips={trips} /> */}
 
-      {/* Health Score Badge */}
-      {healthScore !== null && (
-        <div className="mb-2">
-          <span className={`inline-block px-2 py-1 text-xs rounded ${getHealthColor(healthScore)}`}>
-            Health Score: {healthScore}/100
-          </span>
-        </div>
-      )}
+      {/* Compliance Export */}
+      <button
+        onClick={() => console.log('Exporting audit logs...')}
+        className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900"
+      >
+        🧾 Export Compliance Logs
+      </button>
 
-      {/* Route Suggestion */}
-      {routeSuggestion && (
-        <div className="mb-2 text-sm text-blue-700 flex items-center gap-2">
-          <Route className="w-4 h-4" />
-          Suggested Route: {routeSuggestion.bestRoute} ({routeSuggestion.avgDuration} hrs avg)
-        </div>
-      )}
+      {/* Trip Cards */}
+      {trips.length === 0 ? (
+        <p className="text-sm text-gray-500 mt-4">No trips found. Submit one to get started.</p>
+      ) : (
+        trips.map(trip => (
+          <div key={trip.id} className={`p-4 rounded-xl shadow-md border ${trip.status === 'critical' ? 'border-red-500 bg-red-50' : 'bg-white'}`}>
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-lg font-semibold">{trip.origin} → {trip.destination}</h3>
+              <span className="text-xs text-gray-500">{new Date(trip.date).toLocaleString()}</span>
+            </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
-        <KPIBadge label="Distance" value={`${distance} mi`} status="good" />
-        <KPIBadge label="Fuel Used" value={`${fuelUsed} L`} status="warn" />
-        <KPIBadge label="Profit" value={`R${profit.toFixed(2)}`} status="good" />
-        <KPIBadge label="Revenue" value={`R${revenue.toFixed(2)}`} status="neutral" />
-      </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <p className="font-semibold">Health Score</p>
+                <p>{trip.healthScore}/100</p>
+              </div>
+              <div>
+                <p className="font-semibold">Status</p>
+                <p>{trip.status}</p>
+              </div>
+              <div>
+                <p className="font-semibold">Profit</p>
+                <p>R{trip.analysis?.profitability?.netProfit ?? '—'}</p>
+              </div>
+              <div>
+                <p className="font-semibold">Fuel Used</p>
+                <p>{trip.analysis?.ifta?.fuelUsed ?? '—'} L</p>
+              </div>
+            </div>
 
-      {/* Trip Scoring */}
-      <TripScoreBadge score={score} />
-
-      {/* Maintenance Predictor */}
-      {vehicleStats && Object.keys(vehicleStats).length > 0 && (
-        <MaintenancePredictor vehicleStats={vehicleStats} />
-      )}
-
-      {/* Driver Sentiment */}
-      {Array.isArray(remarks) && remarks.length > 0 && (
-        <DriverSentiment trip={trip} />
-      )}
-
-      {/* Driver Badges */}
-      {enrichedDriverStats.totalTrips > 0 && (
-        <DriverBadges driverStats={enrichedDriverStats} />
-      )}
-
-      {/* Trip Replay */}
-      {Array.isArray(coordinates) && coordinates.length > 0 &&
-       Array.isArray(statusHistory) && statusHistory.length > 0 && (
-        <TripReplay trip={trip} />
-      )}
-
-      {/* Trip Timeline */}
-      {Array.isArray(statusHistory) && statusHistory.length > 0 && (
-        <TripTimeline statusHistory={statusHistory} />
-      )}
-
-      {/* Metadata */}
-      <p className="text-gray-600 mb-1 flex items-center gap-2">
-        <Clock className="w-4 h-4" />
-        {formattedDate}
-      </p>
-      <p className="text-gray-600 mb-1 flex items-center gap-2">
-        <MapPin className="w-4 h-4" />
-        Driver: {driver_name}
-      </p>
-
-      {/* Completion Timestamp */}
-      {status === 'completed' && completedAt && (
-        <p className="text-gray-600 mb-1 text-xs">
-          Completed on:{' '}
-          {new Date(completedAt).toLocaleDateString('en-ZA', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          })}        </p>
-        )}
-  
-        {/* Remarks */}
-        {Array.isArray(remarks) && remarks.length > 0 && (
-          <details className="mb-2 text-sm text-gray-700">
-            <summary className="cursor-pointer font-medium">Trip Remarks</summary>
-            <ul className="list-disc ml-4 mt-1">
-              {remarks.map((r, i) => (
-                <li key={i}>{r}</li>
-              ))}
-            </ul>
-          </details>
-        )}
-  
-        {/* Map Preview */}
-        <TripMap
-          routeData={{
-            coordinates,
-            driver: driver_name,
-            origin,
-            destination,
-            distance
-          }}
-        />
-  
-        {/* Audit Trail Viewer */}
-        {Array.isArray(auditTrail) && auditTrail.length > 0 && (
-          <AuditTrailViewer auditTrail={auditTrail} />
-        )}
-  
-        {/* Admin Override Panel */}
-        {trip?.adminView === true && (
-          <div className="mt-4 bg-gray-50 p-3 rounded-md border">
-            <h4 className="text-sm font-semibold mb-2">Admin Console</h4>
-            {!overrideMode ? (
-              <button
-                onClick={() => setOverrideMode(true)}
-                className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-              >
-                Override Trip Status
-              </button>
-            ) : (
-              <div className="flex gap-2 flex-wrap">
-                {['pending', 'departed', 'completed', 'critical'].map(status => (
-                  <button
-                    key={status}
-                    onClick={() => handleOverrideStatus(status)}
-                    className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-                  >
-                    Set to {status}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setOverrideMode(false)}
-                  className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded"
-                >
-                  Cancel
-                </button>
+            {trip.flagReason && (
+              <div className="mt-3 text-sm text-red-600">
+                🚨 <strong>Flagged:</strong> {trip.flagReason}
               </div>
             )}
+
+            {trip.suggestedDriver_name && (
+              <div className="mt-2 text-sm text-blue-600">
+                🧠 <strong>Suggested Driver:</strong> {trip.suggestedDriver_name}
+              </div>
+            )}
+
+            {trip.statusHistory && (
+              <div className="mt-3 text-xs text-gray-600">
+                <p className="font-semibold">Status History:</p>
+                <ul className="list-disc ml-4">
+                  {trip.statusHistory.map((entry, i) => (
+                    <li key={i}>
+                      {entry.status} @ {new Date(entry.timestamp).toLocaleString()}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {trip.coordinates && (
+              <>
+                <button
+                  onClick={() => setShowReplay(showReplay === trip.id ? null : trip.id)}
+                  className="mt-4 px-3 py-1 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700"
+                >
+                  {showReplay === trip.id ? '⏹ Stop Replay' : '▶️ Replay Trip'}
+                </button>
+                {showReplay === trip.id && <TripReplay coordinates={trip.coordinates} />}
+              </>
+            )}
           </div>
-        )}
-  
-        {/* Complete Trip Button */}
-        {status !== 'completed' && (
-          <div className="mt-4">
-            <button
-              onClick={() => onComplete(trip)}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-            >
-              Complete Trip
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-  
-  export default TripDashboard;
+        ))
+      )}
+    </div>
+  );
+}
