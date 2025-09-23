@@ -71,11 +71,14 @@ const TripPlanner = ({ onTripCreated }) => {
       };
 
       const cleanTripData = JSON.parse(JSON.stringify(safeTripData));
-      console.log('Submitting trip:', cleanTripData); // ✅ Debug log
+      console.log('Submitting trip:', cleanTripData);
       const docRef = await addDoc(collection(db, 'trips'), cleanTripData);
 
       onTripCreated?.({ id: docRef.id, ...cleanTripData });
-      navigate('/dashboard');
+
+      // ✅ Force dashboard refresh
+      navigate('/dashboard', { replace: true });
+      window.location.reload();
 
       setForm({
         origin: '',
@@ -86,7 +89,7 @@ const TripPlanner = ({ onTripCreated }) => {
         departureTime: '',
       });
     } catch (err) {
-      console.error('Trip submission error:', err); // ✅ Debug log
+      console.error('Trip submission error:', err);
       setError(err.message);
     } finally {
       setIsLoading(false);
