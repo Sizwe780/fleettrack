@@ -1,5 +1,13 @@
 const FAKE_BACKEND_tripAnalysis = async (form, userId) => {
     
+    const { 
+        destination, 
+        cycleUsed, 
+        driver_name, 
+        date, 
+        departureTime 
+    } = form;
+
     const logs = [
         { day: 1, status: 'On Duty', duration: 1 },
         { day: 1, status: 'Driving', duration: 5.5 },
