@@ -180,27 +180,27 @@ const App = () => {
     const [trips, setTrips] = useState([]);
 
     useEffect(() => {
-        if (auth) {
-            const unsubscribe = onAuthStateChanged(auth, async (user) => {
-                if (user) {
-                    setUserId(user.uid);
-                } else {
-                    try {
-                        if (__initial_auth_token) {
-                            const userCred = await signInWithCustomToken(auth, __initial_auth_token);
-                            setUserId(userCred.user.uid);
-                        } else {
-                            const userCred = await signInAnonymously(auth);
-                            setUserId(userCred.user.uid);
-                        }
-                    } catch (error) {
-                        console.error("Authentication failed:", error);
+        if (!auth) return;
+
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                setUserId(user.uid);
+            } else {
+                try {
+                    if (__initial_auth_token) {
+                        const userCred = await signInWithCustomToken(auth, __initial_auth_token);
+                        setUserId(userCred.user.uid);
+                    } else {
+                        const userCred = await signInAnonymously(auth);
+                        setUserId(userCred.user.uid);
                     }
+                } catch (error) {
+                    console.error("Authentication failed:", error);
                 }
-                setIsAuthReady(true);
-            });
-            return () => unsubscribe();
-        }
+            }
+            setIsAuthReady(true);
+        });
+        return () => unsubscribe();
     }, []);
 
     useEffect(() => {
