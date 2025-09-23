@@ -11,6 +11,8 @@ import ComplianceDashboard from './modules/ComplianceDashboard';
 import FleetTrackDevOpsConsole from './modules/FleetTrackDevOpsConsole';
 import AdminConsole from './modules/AdminConsole';
 import AuditViewer from './modules/AuditViewer';
+import TripViewer from './modules/TripViewer';
+import ComplianceArchiveDashboard from './modules/ComplianceArchiveDashboard';
 
 export default function FleetTrackConsole({ user }) {
   const { role, uid, fleetStats, envStatus, deploymentLogs, featureToggles, patchRegistry } = user;
@@ -40,6 +42,16 @@ export default function FleetTrackConsole({ user }) {
             <SecureRouteWrapper allowedRoles={['admin', 'compliance']}>
               <SidebarLayout role={role} title="Compliance Dashboard">
                 <ComplianceDashboard fleetStats={fleetStats} />
+              </SidebarLayout>
+            </SecureRouteWrapper>
+          }
+        />
+        <Route
+          path="/compliance-archive"
+          element={
+            <SecureRouteWrapper allowedRoles={['admin', 'compliance']}>
+              <SidebarLayout role={role} title="Compliance Archive">
+                <ComplianceArchiveDashboard userId={uid} />
               </SidebarLayout>
             </SecureRouteWrapper>
           }
@@ -77,6 +89,14 @@ export default function FleetTrackConsole({ user }) {
                 <AuditViewer />
               </SidebarLayout>
             </SecureRouteWrapper>
+          }
+        />
+        <Route
+          path="/trip/:tripId"
+          element={
+            <SidebarLayout role={role} title="Trip Viewer">
+              <TripViewer />
+            </SidebarLayout>
           }
         />
         <Route path="*" element={<Navigate to="/" />} />

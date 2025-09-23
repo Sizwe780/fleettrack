@@ -24,14 +24,14 @@ const SidebarLayout = ({ children, role, title = 'Dashboard' }) => {
           { label: 'Driver Chat', to: '/driverChat' }
         ]
       : []),
-    ...(role === 'admin' || role === 'analyst'
+    ...(role === 'admin' || role === 'compliance'
       ? [
           { label: 'Analytics', to: '/analytics' },
-          { label: 'Manage Trips', to: '/manageTrips' },
-          { label: 'Assign Trip', to: '/assignTrip' },
-          { label: 'Audit Logs', to: '/auditLogs' },
-          { label: 'Fleet Risk', to: '/fleetRisk' },
-          { label: 'Predictive Maintenance', to: '/predictiveMaintenance' }
+          { label: 'Compliance Dashboard', to: '/compliance' },
+          { label: 'Compliance Archive', to: '/compliance-archive' },
+          { label: 'DevOps Console', to: '/devops' },
+          { label: 'Audit Viewer', to: '/audit' },
+          { label: 'Trip Viewer', to: '/trip/preview' }
         ]
       : [])
   ];
