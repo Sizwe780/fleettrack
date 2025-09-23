@@ -40,6 +40,12 @@ const TripPlanner = ({ onTripCreated }) => {
     setError(null);
 
     try {
+      if (!userId) {
+        setError('User not authenticated.');
+        setIsLoading(false);
+        return;
+      }
+
       const newTripData = await FAKE_BACKEND_tripAnalysis(form, userId);
 
       const safeTripData = {
@@ -47,11 +53,11 @@ const TripPlanner = ({ onTripCreated }) => {
         destination: newTripData.destination,
         cycleUsed: newTripData.cycleUsed,
         driver_name: newTripData.driver_name,
-        driver_uid: userId, // ✅ Needed for dashboard filtering
+        driver_uid: userId,
         date: newTripData.date,
         departureTime: newTripData.departureTime,
         routeData: {
-          path: JSON.stringify(newTripData.routeData.path), // ✅ Serialize nested array
+          path: JSON.stringify(newTripData.routeData.path),
           estimatedTime: newTripData.routeData.estimatedTime,
         },
         analysis: {
@@ -64,9 +70,11 @@ const TripPlanner = ({ onTripCreated }) => {
         healthScore: 100,
       };
 
-      const docRef = await addDoc(collection(db, 'trips'), safeTripData);
-      onTripCreated?.({ id: docRef.id, ...safeTripData });
-      navigate('/dashboard'); // ✅ Redirect after submission
+      const cleanTripData = JSON.parse(JSON.stringify(safeTripData));
+      const docRef = await addDoc(collection(db, 'trips'), cleanTripData);
+
+      onTripCreated?.({ id: docRef.id, ...cleanTripData });
+      navigate('/dashboard');
 
       setForm({
         origin: '',
