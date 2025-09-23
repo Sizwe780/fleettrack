@@ -31,7 +31,7 @@ app.use('/api/toggles', require('./routes/toggles'));
 app.use('/api/feature-audit', require('./routes/featureAudit'));
 app.use('/api/deployment-timeline', require('./routes/deploymentTimeline'));
 app.use('/api/admin/users', require('./routes/adminUsers'));
-app.use('/api/trips/submit', require('./routes/trips')); // Changed to new route
+app.use('/api/trips/submit', require('./routes/trips')); // 💡 Add this new route
 app.use('/api/fleet-summary', require('./routes/fleetSummary'));
 app.use('/api/compliance-score', require('./routes/complianceScore'));
 app.use('/api/incidents', require('./routes/incidents'));

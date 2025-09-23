@@ -16,7 +16,7 @@ export default function TripSubmissionForm() {
 
   const handleSubmit = async e => {
     e.preventDefault();
-    const res = await fetch('/api/trips/submit', { // Change to the new, more specific route
+    const res = await fetch('/api/trips/submit', { // 💡 Change to the new route to avoid conflicts
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form)
