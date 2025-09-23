@@ -16,6 +16,19 @@ const TripPlanner = ({ userId, onTripCreated }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // 🔧 Utility to flatten arrays inside dailyLogs
+  const flattenDailyLogs = (logs = []) =>
+    logs.map((log) => {
+      const flatLog = {};
+      for (const key in log) {
+        const value = log[key];
+        flatLog[key] = Array.isArray(value)
+          ? JSON.stringify(value) // Convert nested arrays to strings
+          : value;
+      }
+      return flatLog;
+    });
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -24,8 +37,6 @@ const TripPlanner = ({ userId, onTripCreated }) => {
     try {
       const newTripData = await FAKE_BACKEND_tripAnalysis(form, userId);
 
-      // ✅ FIX: Create a flat, single-level data structure for Firestore
-      // The `analysis` field should contain simple objects and arrays, not nested arrays.
       const safeTripData = {
         origin: newTripData.origin,
         destination: newTripData.destination,
@@ -38,15 +49,13 @@ const TripPlanner = ({ userId, onTripCreated }) => {
           profitability: newTripData.analysis?.profitability ?? null,
           ifta: newTripData.analysis?.ifta ?? null,
           remarks: newTripData.analysis?.remarks ?? '',
-          // ✅ FIX: dailyLogs is now a flat array of objects
-          dailyLogs: newTripData.analysis?.dailyLogs ?? [],
+          dailyLogs: flattenDailyLogs(newTripData.analysis?.dailyLogs),
         },
       };
 
-      // 🔒 Remove the JSON.stringify check, as the data is now structured correctly
       const tripsPath = `apps/fleet-track-app/users/${userId}/trips`;
       const docRef = await addDoc(collection(db, tripsPath), safeTripData);
-      
+
       onTripCreated({ id: docRef.id, ...safeTripData });
 
       setForm({
@@ -90,7 +99,11 @@ const TripPlanner = ({ userId, onTripCreated }) => {
           <Input label="Trip Date" name="date" value={form.date} type="date" />
           <Input label="Departure Time" name="departureTime" value={form.departureTime} type="time" />
         </div>
-        <button type="submit" disabled={isLoading} className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+        >
           {isLoading ? 'Creating...' : 'Create Trip'}
         </button>
         {error && <p className="text-red-500 mt-2">{error}</p>}
