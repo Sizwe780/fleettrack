@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { doc, setDoc } from 'firebase/firestore';
+import { addDoc, collection } from 'firebase/firestore';
 import { db } from '../firebase';
 
 const TripForm = ({ userId }) => {
@@ -11,9 +11,24 @@ const TripForm = ({ userId }) => {
   const [currentLocation, setCurrentLocation] = useState('');
   const [cycleUsed, setCycleUsed] = useState('');
   const [departureTime, setDepartureTime] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
+
+  // Auto-fetch current location
+  useEffect(() => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setCurrentLocation(`${latitude},${longitude}`);
+      },
+      (err) => console.error('Geolocation error:', err)
+    );
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
+    setStatusMessage('');
 
     const tripData = {
       origin,
@@ -34,7 +49,7 @@ const TripForm = ({ userId }) => {
       const analysisRes = await axios.post(`${process.env.REACT_APP_API_URL}/api/calculate-trip/`, tripData);
       const analysis = analysisRes.data;
 
-      // Step 2: Save full trip to Django
+      // Step 2: Save to Django
       const fullTrip = {
         ...tripData,
         analysis,
@@ -43,9 +58,9 @@ const TripForm = ({ userId }) => {
 
       await axios.post(`${process.env.REACT_APP_API_URL}/api/trips/`, fullTrip);
 
-      // ✅ Step 3: Mirror trip to Firestore
-      const tripId = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      await setDoc(doc(db, 'trips', tripId), {
+      // Step 3: Save to Firestore under user scope
+      const path = `apps/fleet-track-app/users/${userId}/trips`;
+      await addDoc(collection(db, path), {
         ...fullTrip,
         status: 'pending',
         driver_uid: userId
@@ -59,17 +74,24 @@ const TripForm = ({ userId }) => {
       setCurrentLocation('');
       setCycleUsed('');
       setDepartureTime('');
-
-      alert('Trip submitted and synced successfully!');
+      setStatusMessage('✅ Trip submitted and synced successfully!');
     } catch (error) {
       console.error('Submission failed:', error.response?.data || error.message);
-      alert('Failed to submit trip.');
+      setStatusMessage('❌ Failed to submit trip. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 p-4 bg-white rounded-xl shadow-md max-w-xl mx-auto">
-      <h2 className="text-xl font-bold mb-2">Create New Trip</h2>
+    <form onSubmit={handleSubmit} className="space-y-4 p-6 bg-white rounded-xl shadow-md max-w-xl mx-auto">
+      <h2 className="text-xl font-bold mb-2">📍 Create New Trip</h2>
+
+      {statusMessage && (
+        <div className={`text-sm font-medium mb-2 ${statusMessage.includes('✅') ? 'text-green-600' : 'text-red-600'}`}>
+          {statusMessage}
+        </div>
+      )}
 
       <input
         type="text"
@@ -112,11 +134,12 @@ const TripForm = ({ userId }) => {
         value={currentLocation}
         onChange={(e) => setCurrentLocation(e.target.value)}
         className="w-full border rounded-md px-3 py-2"
+        readOnly
       />
 
       <input
         type="number"
-        placeholder="Cycle Used"
+        placeholder="Cycle Used (hrs)"
         value={cycleUsed}
         onChange={(e) => setCycleUsed(e.target.value)}
         className="w-full border rounded-md px-3 py-2"
@@ -132,9 +155,12 @@ const TripForm = ({ userId }) => {
 
       <button
         type="submit"
-        className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700"
+        disabled={isSubmitting}
+        className={`w-full py-2 rounded-md font-semibold ${
+          isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'
+        }`}
       >
-        Submit Trip
+        {isSubmitting ? 'Submitting...' : 'Submit Trip'}
       </button>
     </form>
   );
