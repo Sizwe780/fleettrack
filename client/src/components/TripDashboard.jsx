@@ -2,6 +2,8 @@ import React from 'react';
 import { MapPin, Clock, WifiOff, Route } from 'lucide-react';
 import TripMap from './TripMap';
 import KPIBadge from './KPIBadge';
+import TripScoreBadge from './TripScoreBadge';
+import scoreTrip from '../utils/tripScorer';
 
 const TripDashboard = ({
   trip,
@@ -62,6 +64,8 @@ const TripDashboard = ({
     );
   };
 
+  const score = scoreTrip(trip);
+
   return (
     <div
       className={`bg-white p-4 rounded-xl shadow-md border transition ${
@@ -114,6 +118,11 @@ const TripDashboard = ({
         <KPIBadge label="Fuel Used" value={`${fuelUsed} L`} status="warn" />
         <KPIBadge label="Profit" value={`R${profit.toFixed(2)}`} status="good" />
         <KPIBadge label="Revenue" value={`R${revenue.toFixed(2)}`} status="neutral" />
+      </div>
+
+      {/* Trip Scoring */}
+      <div className="mb-4">
+        <TripScoreBadge score={score} />
       </div>
 
       {/* Metadata */}
