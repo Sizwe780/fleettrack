@@ -8,17 +8,34 @@ export default function FleetAnalytics() {
 
   useEffect(() => {
     const fetchTrips = async () => {
-      const snapshot = await getDocs(collection(db, 'trips'));
-      const trips = snapshot.docs.map(doc => doc.data());
+      try {
+        const snapshot = await getDocs(collection(db, 'apps/fleet-track-app/allTrips'));
+        const trips = snapshot.docs.map(doc => doc.data());
 
-      const fuelTrend = trips.reduce((acc, trip) => {
-        const date = new Date(trip.date).toLocaleDateString('en-ZA', { month: 'short', year: 'numeric' });
-        acc[date] = (acc[date] || 0) + (trip.analysis?.ifta?.fuelUsed ?? 0);
-        return acc;
-      }, {});
+        const fuelTrend = trips.reduce((acc, trip) => {
+          const rawDate = trip.date ?? null;
+          const fuelUsed = trip.analysis?.ifta?.fuelUsed ?? 0;
 
-      const formatted = Object.entries(fuelTrend).map(([label, value]) => ({ label, value }));
-      setFuelData(formatted);
+          if (!rawDate || typeof fuelUsed !== 'number') return acc;
+
+          const dateKey = new Date(rawDate).toLocaleDateString('en-ZA', {
+            month: 'short',
+            year: 'numeric'
+          });
+
+          acc[dateKey] = (acc[dateKey] || 0) + fuelUsed;
+          return acc;
+        }, {});
+
+        const formatted = Object.entries(fuelTrend)
+          .map(([label, value]) => ({ label, value }))
+          .sort((a, b) => new Date(`01 ${a.label}`) - new Date(`01 ${b.label}`));
+
+        setFuelData(formatted);
+      } catch (err) {
+        console.error('FleetAnalytics fetch error:', err);
+        setFuelData([]);
+      }
     };
 
     fetchTrips();

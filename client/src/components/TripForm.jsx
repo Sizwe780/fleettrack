@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, doc } from 'firebase/firestore';
 import { db } from '../firebase';
-import validateTripPayload from '../utils/tripValidator'; // ✅ OpsCert Patch 01
+import validateTripPayload from '../utils/tripValidator'; // ✅ Patch 01
+import detectTripAnomalies from '../utils/tripAnomalyDetector'; // ✅ Patch 14
 
 const TripForm = ({ userId, onTripCreated }) => {
   const [origin, setOrigin] = useState('');
@@ -85,7 +86,20 @@ const TripForm = ({ userId, onTripCreated }) => {
         ]
       };
 
-      // ✅ Step 3: Validate payload before Firestore write
+      // ✅ Patch 14: Detect anomalies
+      const anomalies = detectTripAnomalies(enrichedTrip);
+      if (anomalies.length > 0) {
+        enrichedTrip.anomalies = anomalies;
+        enrichedTrip.status = 'critical';
+        enrichedTrip.flagReason = anomalies.join(', ');
+      }
+
+      // ✅ Patch 20: Predictive dispatch
+      if (analysis.suggestedDriver_uid) {
+        enrichedTrip.suggestedDriver_uid = analysis.suggestedDriver_uid;
+      }
+
+      // ✅ Patch 01: Validate payload
       const { isValid, errors } = validateTripPayload(enrichedTrip);
       if (!isValid) {
         console.error('Trip validation failed:', errors);
@@ -94,16 +108,32 @@ const TripForm = ({ userId, onTripCreated }) => {
         return;
       }
 
-      // Step 4: Save to Django backend
+      // Step 3: Save to Django backend
       await axios.post(`${process.env.REACT_APP_API_URL}/api/trips/`, fullTrip);
 
-      // Step 5: Save to Firestore
+      // Step 4: Save to Firestore
       const path = `apps/fleet-track-app/users/${userId}/trips`;
-      await addDoc(collection(db, path), enrichedTrip);
+      const docRef = await addDoc(collection(db, path), enrichedTrip);
+      const tripId = docRef.id;
+
+      // ✅ Patch 16: Log audit trail
+      await addDoc(collection(db, `${path}/${tripId}/auditTrail`), {
+        action: 'Trip created via TripForm',
+        actor: userId,
+        timestamp: new Date().toISOString(),
+        reason: 'Manual dispatch submission'
+      });
+
+      // ✅ Patch 19: Trigger notification (optional)
+      await axios.post(`${process.env.REACT_APP_API_URL}/api/notify/`, {
+        title: 'New Trip Submitted',
+        body: `${driverName} submitted a trip from ${origin} to ${destination}`,
+        userId
+      });
 
       if (onTripCreated) onTripCreated(enrichedTrip);
 
-      // Step 6: Reset form
+      // Step 5: Reset form
       setOrigin('');
       setDestination('');
       setDate('');
@@ -130,73 +160,15 @@ const TripForm = ({ userId, onTripCreated }) => {
         </div>
       )}
 
-      <input
-        type="text"
-        placeholder="Origin"
-        value={origin}
-        onChange={(e) => setOrigin(e.target.value)}
-        className="w-full border rounded-md px-3 py-2"
-        required
-      />
+      <input type="text" placeholder="Origin" value={origin} onChange={(e) => setOrigin(e.target.value)} className="w-full border rounded-md px-3 py-2" required />
+      <input type="text" placeholder="Destination" value={destination} onChange={(e) => setDestination(e.target.value)} className="w-full border rounded-md px-3 py-2" required />
+      <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full border rounded-md px-3 py-2" required />
+      <input type="text" placeholder="Driver Name" value={driverName} onChange={(e) => setDriverName(e.target.value)} className="w-full border rounded-md px-3 py-2" required />
+      <input type="text" placeholder="Current Location" value={currentLocation} onChange={(e) => setCurrentLocation(e.target.value)} className="w-full border rounded-md px-3 py-2" readOnly />
+      <input type="number" placeholder="Cycle Used (hrs)" value={cycleUsed} onChange={(e) => setCycleUsed(e.target.value)} className="w-full border rounded-md px-3 py-2" />
+      <input type="time" placeholder="Departure Time" value={departureTime} onChange={(e) => setDepartureTime(e.target.value)} className="w-full border rounded-md px-3 py-2" />
 
-      <input
-        type="text"
-        placeholder="Destination"
-        value={destination}
-        onChange={(e) => setDestination(e.target.value)}
-        className="w-full border rounded-md px-3 py-2"
-        required
-      />
-
-      <input
-        type="date"
-        value={date}
-        onChange={(e) => setDate(e.target.value)}
-        className="w-full border rounded-md px-3 py-2"
-        required
-      />
-
-      <input
-        type="text"
-        placeholder="Driver Name"
-        value={driverName}
-        onChange={(e) => setDriverName(e.target.value)}
-        className="w-full border rounded-md px-3 py-2"
-        required
-      />
-
-      <input
-        type="text"
-        placeholder="Current Location"
-        value={currentLocation}
-        onChange={(e) => setCurrentLocation(e.target.value)}
-        className="w-full border rounded-md px-3 py-2"
-        readOnly
-      />
-
-      <input
-        type="number"
-        placeholder="Cycle Used (hrs)"
-        value={cycleUsed}
-        onChange={(e) => setCycleUsed(e.target.value)}
-        className="w-full border rounded-md px-3 py-2"
-      />
-
-      <input
-        type="time"
-        placeholder="Departure Time"
-        value={departureTime}
-        onChange={(e) => setDepartureTime(e.target.value)}
-        className="w-full border rounded-md px-3 py-2"
-      />
-
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className={`w-full py-2 rounded-md font-semibold ${
-          isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'
-        }`}
-      >
+      <button type="submit" disabled={isSubmitting} className={`w-full py-2 rounded-md font-semibold ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
         {isSubmitting ? 'Submitting...' : 'Submit Trip'}
       </button>
     </form>

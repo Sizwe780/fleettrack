@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import TripTimeline from './TripTimeline';
 import { MapPin, Clock, WifiOff, Route, AlertTriangle } from 'lucide-react';
 import TripMap from './TripMap';
@@ -9,6 +9,9 @@ import MaintenancePredictor from './MaintenancePredictor';
 import DriverSentiment from './DriverSentiment';
 import TripReplay from './TripReplay';
 import DriverBadges from './DriverBadges';
+import AuditTrailViewer from './AuditTrailViewer';
+import { db } from '../firebase';
+import { collection, getDocs, setDoc, doc, addDoc } from 'firebase/firestore';
 
 const TripDashboard = ({
   trip,
@@ -34,7 +37,9 @@ const TripDashboard = ({
     completedAt = null,
     statusHistory = [],
     vehicleStats = {},
-    driverStats = {}
+    driverStats = {},
+    driver_uid,
+    id
   } = trip;
 
   const revenue = analysis?.profitability?.revenue ?? 0;
@@ -80,6 +85,41 @@ const TripDashboard = ({
     violationCount: driverStats.violationCount ?? 0,
     avgHealthScore: driverStats.avgHealthScore ?? healthScore ?? 0,
     avgProfit: driverStats.avgProfit ?? profit ?? 0
+  };
+
+  const [auditTrail, setAuditTrail] = useState([]);
+  const [overrideMode, setOverrideMode] = useState(false);
+
+  useEffect(() => {
+    const fetchAuditTrail = async () => {
+      if (!id || !driver_uid) return;
+      const path = `apps/fleet-track-app/users/${driver_uid}/trips/${id}/auditTrail`;
+      const snapshot = await getDocs(collection(db, path));
+      const entries = snapshot.docs.map(doc => doc.data());
+      setAuditTrail(entries);
+    };
+
+    fetchAuditTrail();
+  }, [id, driver_uid]);
+
+  const handleOverrideStatus = async (newStatus) => {
+    const path = `apps/fleet-track-app/users/${driver_uid}/trips/${id}`;
+    await setDoc(doc(db, path), {
+      status: newStatus,
+      statusHistory: [...(statusHistory ?? []), {
+        status: newStatus,
+        timestamp: new Date().toISOString()
+      }]
+    }, { merge: true });
+
+    await addDoc(collection(db, `${path}/auditTrail`), {
+      action: `Status overridden to ${newStatus}`,
+      actor: 'admin',
+      timestamp: new Date().toISOString(),
+      reason: 'Manual override via Admin Console'
+    });
+
+    setOverrideMode(false);
   };
 
   return (
@@ -145,37 +185,27 @@ const TripDashboard = ({
       </div>
 
       {/* Trip Scoring */}
-      <div className="mb-4">
-        <TripScoreBadge score={score} />
-      </div>
+      <TripScoreBadge score={score} />
 
       {/* Maintenance Predictor */}
       {vehicleStats && Object.keys(vehicleStats).length > 0 && (
-        <div className="mb-4">
-          <MaintenancePredictor vehicleStats={vehicleStats} />
-        </div>
+        <MaintenancePredictor vehicleStats={vehicleStats} />
       )}
 
       {/* Driver Sentiment */}
       {Array.isArray(remarks) && remarks.length > 0 && (
-        <div className="mb-2">
-          <DriverSentiment trip={trip} />
-        </div>
+        <DriverSentiment trip={trip} />
       )}
 
       {/* Driver Badges */}
       {enrichedDriverStats.totalTrips > 0 && (
-        <div className="mb-2">
-          <DriverBadges driverStats={enrichedDriverStats} />
-        </div>
+        <DriverBadges driverStats={enrichedDriverStats} />
       )}
 
       {/* Trip Replay */}
       {Array.isArray(coordinates) && coordinates.length > 0 &&
        Array.isArray(statusHistory) && statusHistory.length > 0 && (
-        <div className="mb-4">
-          <TripReplay trip={trip} />
-        </div>
+        <TripReplay trip={trip} />
       )}
 
       {/* Trip Timeline */}
@@ -203,46 +233,83 @@ const TripDashboard = ({
             day: 'numeric',
             hour: '2-digit',
             minute: '2-digit'
-          })}
-        </p>
-      )}
-
-      {/* Remarks */}
-      {Array.isArray(remarks) && remarks.length > 0 && (
-        <details className="mb-2 text-sm text-gray-700">
-          <summary className="cursor-pointer font-medium">Trip Remarks</summary>
-          <ul className="list-disc ml-4 mt-1">
-            {remarks.map((r, i) => (
-              <li key={i}>{r}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-
-      {/* Map Preview */}
-      <TripMap
-        routeData={{
-          coordinates,
-          driver: driver_name,
-          origin,
-          destination,
-          distance
-        }}
-      />
-
-     {/* Complete Trip Button */}
-            {status !== 'completed' && (
-                <div className="mt-4">
-                    <button
-                        onClick={() => onComplete(trip)}
-                        className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-                    >
-                        Complete Trip
-                    </button>
-                </div>
+          })}        </p>
+        )}
+  
+        {/* Remarks */}
+        {Array.isArray(remarks) && remarks.length > 0 && (
+          <details className="mb-2 text-sm text-gray-700">
+            <summary className="cursor-pointer font-medium">Trip Remarks</summary>
+            <ul className="list-disc ml-4 mt-1">
+              {remarks.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
+          </details>
+        )}
+  
+        {/* Map Preview */}
+        <TripMap
+          routeData={{
+            coordinates,
+            driver: driver_name,
+            origin,
+            destination,
+            distance
+          }}
+        />
+  
+        {/* Audit Trail Viewer */}
+        {Array.isArray(auditTrail) && auditTrail.length > 0 && (
+          <AuditTrailViewer auditTrail={auditTrail} />
+        )}
+  
+        {/* Admin Override Panel */}
+        {trip?.adminView === true && (
+          <div className="mt-4 bg-gray-50 p-3 rounded-md border">
+            <h4 className="text-sm font-semibold mb-2">Admin Console</h4>
+            {!overrideMode ? (
+              <button
+                onClick={() => setOverrideMode(true)}
+                className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Override Trip Status
+              </button>
+            ) : (
+              <div className="flex gap-2 flex-wrap">
+                {['pending', 'departed', 'completed', 'critical'].map(status => (
+                  <button
+                    key={status}
+                    onClick={() => handleOverrideStatus(status)}
+                    className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                  >
+                    Set to {status}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setOverrideMode(false)}
+                  className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded"
+                >
+                  Cancel
+                </button>
+              </div>
             )}
-        </div>
+          </div>
+        )}
+  
+        {/* Complete Trip Button */}
+        {status !== 'completed' && (
+          <div className="mt-4">
+            <button
+              onClick={() => onComplete(trip)}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+            >
+              Complete Trip
+            </button>
+          </div>
+        )}
+      </div>
     );
-};
-
-export default TripDashboard
+  };
+  
+  export default TripDashboard;
