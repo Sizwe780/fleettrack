@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fleettrack-cache-v3';
+const CACHE_NAME = 'fleettrack-cache-v3.5';
 const urlsToCache = [
   '/',
   '/manifest.json',
@@ -7,7 +7,8 @@ const urlsToCache = [
   '/logo512.png',
   '/offline.html',
   '/create-trip',
-  '/dashboard'
+  '/dashboard',
+  '/compliance-archive'
 ];
 
 // 🔒 Pre-cache static assets
@@ -37,7 +38,7 @@ self.addEventListener('fetch', event => {
   const { request } = event;
 
   // 🚚 API requests (network-first)
-  if (request.url.includes('/trips')) {
+  if (request.url.includes('/trips') || request.url.includes('/api/')) {
     event.respondWith(
       fetch(request)
         .then(response => {
@@ -67,8 +68,22 @@ self.addEventListener('fetch', event => {
 // 🔔 Push notification handler
 self.addEventListener('push', event => {
   const data = event.data?.json() || {};
-  self.registration.showNotification(data.title || 'FleetTrack Alert', {
-    body: data.body || 'You have a new fleet notification.',
+  const title = data.title || 'FleetTrack Alert';
+  const body = data.body || 'You have a new fleet notification.';
+
+  // 🧠 Log push payload to audit trail (if supported)
+  try {
+    fetch('/api/log-push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, body, timestamp: new Date().toISOString() })
+    });
+  } catch (err) {
+    console.warn('Push log failed:', err);
+  }
+
+  self.registration.showNotification(title, {
+    body,
     icon: '/logo192.png'
   });
 });

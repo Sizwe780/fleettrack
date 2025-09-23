@@ -31,7 +31,8 @@ const SidebarLayout = ({ children, role, title = 'Dashboard' }) => {
           { label: 'Compliance Archive', to: '/compliance-archive' },
           { label: 'DevOps Console', to: '/devops' },
           { label: 'Audit Viewer', to: '/audit' },
-          { label: 'Trip Viewer', to: '/trip/preview' }
+          { label: 'Trip Viewer', to: '/trip/preview' },
+          { label: 'Pitch Deck Highlights', to: '/pitch' } // ✅ Added
         ]
       : [])
   ];
@@ -61,6 +62,11 @@ const SidebarLayout = ({ children, role, title = 'Dashboard' }) => {
           <div>
             <h1 className="text-xl font-bold">{title}</h1>
             <p className="text-sm text-gray-500 capitalize">Role: {role}</p>
+            {role === 'admin' && (
+              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full mt-1 inline-block">
+                Demo Mode
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-4">
             <button
