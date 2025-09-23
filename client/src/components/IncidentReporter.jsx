@@ -31,11 +31,15 @@ const IncidentReporter = ({ tripId }) => {
       const user = getAuth().currentUser;
       if (!user) throw new Error('User not authenticated.');
 
+      const [lat, lng] = form.location.split(',').map(Number);
       const payload = {
-        ...form,
         tripId,
         driver_uid: user.uid,
         driver_name: user.displayName ?? 'Unknown',
+        type: form.type,
+        severity: form.severity,
+        location: { lat, lng },
+        remarks: form.remarks ? [form.remarks] : [],
         timestamp: serverTimestamp(),
       };
 
@@ -108,6 +112,12 @@ const IncidentReporter = ({ tripId }) => {
         {status === 'success' && <p className="text-green-600 mt-2">Incident logged successfully.</p>}
         {status === 'error' && <p className="text-red-600 mt-2">Error submitting incident.</p>}
       </form>
+
+      {/* 🧪 Diagnostic Overlay */}
+      <details className="bg-gray-50 p-2 rounded text-xs mt-3">
+        <summary className="cursor-pointer font-semibold text-gray-700">📍 Incident Payload Debug</summary>
+        <pre className="overflow-x-auto mt-1">{JSON.stringify(form, null, 2)}</pre>
+      </details>
     </div>
   );
 };

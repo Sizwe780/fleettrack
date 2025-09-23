@@ -1,33 +1,42 @@
-const express = require('express');
-const router = express.Router();
-const { db } = require('../firebaseAdmin'); // ✅ Use admin SDK
-const { Timestamp } = require('firebase-admin/firestore');
+const mongoose = require('mongoose');
 
-router.post('/', async (req, res) => {
-  try {
-    const { driverId, startLocation, endLocation, cargoType, notes } = req.body;
-
-    // Optional: Validate required fields
-    if (!driverId || !startLocation || !endLocation || !cargoType) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    const path = `apps/fleet-track-app/trips`;
-    const docRef = await db.collection(path).add({
-      driverId,
-      startLocation,
-      endLocation,
-      cargoType,
-      notes,
-      timestamp: Timestamp.now(),
-      status: 'submitted'
-    });
-
-    res.status(201).json({ id: docRef.id });
-  } catch (err) {
-    console.error('Trip submission failed:', err.message);
-    res.status(500).json({ error: 'Trip submission failed' });
-  }
+const TripSchema = new mongoose.Schema({
+  userId: {
+    type: String,
+    required: true,
+  },
+  driver_name: String,
+  date: String,
+  current_location: String,
+  cycle_used: String,
+  departure_time: String,
+  origin: {
+    location: String,
+    latitude: Number,
+    longitude: Number,
+  },
+  destination: {
+    location: String,
+    latitude: Number,
+    longitude: Number,
+  },
+  remarks: {
+    type: String,
+    default: 'No remarks recorded for this trip.',
+  },
+  routeData: {
+    type: Object,
+    default: null,
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'departed', 'completed', 'critical'],
+    default: 'pending',
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
 });
 
-module.exports = router;
+module.exports = mongoose.model('Trip', TripSchema);

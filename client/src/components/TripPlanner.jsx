@@ -38,18 +38,6 @@ const TripPlanner = ({ onTripCreated, appId }) => {
     );
   }, []);
 
-  const flattenDailyLogs = (logs = []) =>
-    logs.map((log) => {
-      const flatLog = {};
-      for (const key in log) {
-        const value = log[key];
-        flatLog[key] = Array.isArray(value)
-          ? value.map((item) => (Array.isArray(item) ? JSON.stringify(item) : item))
-          : value;
-      }
-      return flatLog;
-    });
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -69,7 +57,7 @@ const TripPlanner = ({ onTripCreated, appId }) => {
       );
 
       const hasHOSViolation = logs.some(log =>
-        log.blocks.filter(b => b.type === 'driving')
+        log.blocks?.filter(b => b.type === 'driving')
           .some(b => {
             const start = parseFloat(b.start.split(':')[0]) + parseFloat(b.start.split(':')[1]) / 60;
             const end = parseFloat(b.end.split(':')[0]) + parseFloat(b.end.split(':')[1]) / 60;
@@ -77,29 +65,47 @@ const TripPlanner = ({ onTripCreated, appId }) => {
           })
       );
 
+      const flattenedLogs = logs.flatMap(log =>
+        log.blocks.map(block => ({
+          ...block,
+          date: log.date
+        }))
+      );
+
       const safeTripData = {
-        currentLocation: newTripData.currentLocation,
+        driver_uid: userId,
+        driver_name: newTripData.driver_name,
         origin: newTripData.origin,
         destination: newTripData.destination,
+        currentLocation: newTripData.currentLocation,
         cycleUsed: newTripData.cycleUsed,
-        driver_name: newTripData.driver_name,
-        driver_uid: userId,
         date: newTripData.date,
         departureTime: newTripData.departureTime,
         coordinates: newTripData.routeData.path.map(([lng, lat]) => ({ lng, lat })),
         routeData: {
-          path: JSON.stringify(newTripData.routeData.path),
+          path: newTripData.routeData.path,
           estimatedTime: newTripData.routeData.estimatedTime,
         },
         analysis: {
           profitability: newTripData.analysis?.profitability ?? null,
           ifta: newTripData.analysis?.ifta ?? null,
-          remarks: newTripData.analysis?.remarks ?? '',
-          dailyLogs: flattenDailyLogs(logs),
+          healthScore: newTripData.analysis?.healthScore ?? 100,
+          remarks: [
+            `Trip is ~${newTripData.distanceMiles} miles long.`,
+            `Fleet Health Score: ${newTripData.analysis?.healthScore ?? 100} / 100.`,
+            ...(newTripData.analysis?.remarks ? [newTripData.analysis.remarks] : [])
+          ],
+          dailyLogs: flattenedLogs,
         },
+        statusHistory: [
+          {
+            status: hasHOSViolation ? 'critical' : 'pending',
+            timestamp: Date.now(),
+            actor: userId,
+          }
+        ],
         status: hasHOSViolation ? 'critical' : 'pending',
         flagReason: hasHOSViolation ? 'HOS violation: driving block exceeds 4h' : null,
-        healthScore: newTripData.analysis?.healthScore ?? 100,
         createdAt: serverTimestamp(),
       };
 

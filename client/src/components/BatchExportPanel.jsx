@@ -6,10 +6,22 @@ export default function BatchExportPanel({ trips }) {
       id: t.id,
       origin: t.origin,
       destination: t.destination,
-      logs: t.analysis?.dailyLogs ?? [],
+      departureTime: t.departureTime ?? '—',
+      healthScore: t.analysis?.healthScore ?? t.healthScore ?? 0,
       profit: t.analysis?.profitability?.netProfit ?? 0,
-      flagged: t.status === 'critical'
+      flagged: t.status === 'critical',
+      statusHistory: t.statusHistory ?? [],
+      logs: (t.analysis?.dailyLogs ?? []).flatMap(log =>
+        log.blocks?.map(b => ({
+          date: log.date,
+          type: b.type,
+          start: b.start,
+          end: b.end,
+          duration: b.durationHours ?? '—',
+        })) ?? []
+      ),
     }));
+
     console.log('Exporting batch:', exportPayload);
     alert(`Exported ${exportPayload.length} trips`);
   };
@@ -23,6 +35,12 @@ export default function BatchExportPanel({ trips }) {
       >
         Export All Trips
       </button>
+
+      {/* 🧪 Diagnostic Overlay */}
+      <details className="bg-gray-50 p-3 rounded text-xs mt-4">
+        <summary className="cursor-pointer font-semibold text-gray-700">📤 Export Payload Debug</summary>
+        <pre className="overflow-x-auto mt-2">{JSON.stringify(trips, null, 2)}</pre>
+      </details>
     </div>
   );
 }

@@ -38,21 +38,29 @@ export default function TripDashboard({ userId }) {
 
   useEffect(() => {
     const path = `apps/fleet-track-app/trips`;
-    const unsubscribe = onSnapshot(collection(db, path), (snapshot) => {
-      const entries = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(t => t.driver_uid === userId);
-      const sorted = entries.sort((a, b) =>
-        new Date(b.createdAt ?? b.date) - new Date(a.createdAt ?? a.date)
-      );
-      setTrips(sorted);
-    });
+    const unsubscribe = onSnapshot(
+      collection(db, path),
+      (snapshot) => {
+        const entries = snapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(t => t.driver_uid === userId);
+        const sorted = entries.sort((a, b) => {
+          const aTime = a.createdAt?.toDate?.() ?? new Date(a.date);
+          const bTime = b.createdAt?.toDate?.() ?? new Date(b.date);
+          return bTime - aTime;
+        });
+        setTrips(sorted);
+      },
+      (error) => {
+        console.error('Snapshot error:', error.message);
+      }
+    );
 
     return () => unsubscribe();
   }, [userId]);
 
   const avgHealthScore = Math.round(
-    trips.reduce((sum, t) => sum + (t.healthScore ?? 0), 0) / (trips.length || 1)
+    trips.reduce((sum, t) => sum + (t.analysis?.healthScore ?? t.healthScore ?? 0), 0) / (trips.length || 1)
   );
 
   const avgProfit = Math.round(
@@ -116,7 +124,7 @@ export default function TripDashboard({ userId }) {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <p className="font-semibold">Health Score</p>
-                <p>{trip.healthScore}/100</p>
+                <p>{trip.analysis?.healthScore ?? trip.healthScore}/100</p>
               </div>
               <div>
                 <p className="font-semibold">Status</p>
@@ -144,9 +152,14 @@ export default function TripDashboard({ userId }) {
               </div>
             )}
 
-            {trip.analysis?.remarks && (
+            {Array.isArray(trip.analysis?.remarks) && trip.analysis.remarks.length > 0 && (
               <div className="mt-2 text-sm text-gray-700">
-                🧾 <strong>Remarks:</strong> {trip.analysis.remarks}
+                🧾 <strong>Remarks:</strong>
+                <ul className="list-disc ml-4">
+                  {trip.analysis.remarks.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
               </div>
             )}
 
@@ -214,6 +227,12 @@ export default function TripDashboard({ userId }) {
                 {showReplay === trip.id && <TripReplayWithStops trip={trip} />}
               </>
             )}
+
+            {/* 🧪 Diagnostic Overlay */}
+            <details className="mt-6 bg-gray-50 p-3 rounded text-xs">
+              <summary className="cursor-pointer font-semibold text-gray-700">🔍 Trip Payload Debug</summary>
+              <pre className="overflow-x-auto mt-2">{JSON.stringify(trip, null, 2)}</pre>
+            </details>
           </div>
         ))
       )}
