@@ -1,9 +1,13 @@
 import React from 'react';
+import TripTimeline from './TripTimeline';
 import { MapPin, Clock, WifiOff, Route } from 'lucide-react';
 import TripMap from './TripMap';
 import KPIBadge from './KPIBadge';
 import TripScoreBadge from './TripScoreBadge';
 import scoreTrip from '../utils/tripScorer';
+import MaintenancePredictor from './MaintenancePredictor';
+
+<MaintenancePredictor vehicleStats={trip.vehicleStats} />
 
 const TripDashboard = ({
   trip,
@@ -124,6 +128,11 @@ const TripDashboard = ({
       <div className="mb-4">
         <TripScoreBadge score={score} />
       </div>
+
+      {/* Trip Timeline */}
+          {trip.statusHistory && trip.statusHistory.length > 0 && (
+              <TripTimeline statusHistory={trip.statusHistory} />
+          )}
 
       {/* Metadata */}
       <p className="text-gray-600 mb-1 flex items-center gap-2">

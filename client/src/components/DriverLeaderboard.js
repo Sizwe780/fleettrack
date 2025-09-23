@@ -4,84 +4,72 @@ import { db } from '../firebase';
 
 const DriverLeaderboard = () => {
   const [drivers, setDrivers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchTrips = async () => {
+    const fetchDrivers = async () => {
       try {
-        const snapshot = await getDocs(collection(db, 'trips'));
-        const trips = snapshot.docs.map(doc => doc.data());
+        const snap = await getDocs(collection(db, 'users'));
+        const tripsSnap = await getDocs(collection(db, 'trips'));
 
-        const grouped = trips.reduce((acc, trip) => {
-          const uid = trip.driver_uid;
-          if (!uid) return acc;
+        const tripData = tripsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const driverData = snap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(user => user.role === 'driver')
+          .map(driver => {
+            const driverTrips = tripData.filter(t => t.driver_uid === driver.id);
+            const totalTrips = driverTrips.length;
+            const avgProfit = driverTrips.reduce((acc, t) => acc + (t.analysis?.profitability?.netProfit ?? 0), 0) / (totalTrips || 1);
+            const avgScore = driverTrips.reduce((acc, t) => acc + (t.healthScore ?? 0), 0) / (totalTrips || 1);
 
-          const name = trip.driver_name ?? 'Unnamed Driver';
-          const score = trip.healthScore ?? 0;
-          const profit = trip.analysis?.profitability?.netProfit ?? 0;
+            return {
+              name: driver.name || driver.email,
+              totalTrips,
+              avgProfit: Math.round(avgProfit),
+              avgScore: Math.round(avgScore)
+            };
+          });
 
-          if (!acc[uid]) {
-            acc[uid] = { uid, name, profit: 0, scoreSum: 0, count: 0 };
-          }
-
-          acc[uid].profit += profit;
-          acc[uid].scoreSum += score;
-          acc[uid].count += 1;
-
-          return acc;
-        }, {});
-
-        const ranked = Object.values(grouped)
-          .map(d => ({
-            ...d,
-            avgScore: d.count > 0 ? Math.round(d.scoreSum / d.count) : 0
-          }))
-          .sort((a, b) => b.profit - a.profit);
-
-        setDrivers(ranked);
-      } catch (error) {
-        console.error('Error fetching leaderboard:', error);
+        const sorted = driverData.sort((a, b) => b.avgScore - a.avgScore);
+        setDrivers(sorted);
+      } catch (err) {
+        console.error('Leaderboard fetch error:', err);
       } finally {
-        setLoading(false);
+        setIsLoading(false);
       }
     };
 
-    fetchTrips();
+    fetchDrivers();
   }, []);
 
-  const getScoreColor = (score) => {
-    if (score >= 80) return 'text-green-600';
-    if (score >= 50) return 'text-yellow-600';
-    return 'text-red-600';
-  };
-
   return (
-    <div className="max-w-3xl mx-auto mt-10 space-y-6">
-      <h2 className="text-2xl font-bold">🏆 Driver Leaderboard</h2>
-
-      {loading ? (
+    <div className="p-4 bg-white rounded-xl shadow-md border">
+      <h2 className="text-xl font-bold mb-4">Driver Performance Leaderboard</h2>
+      {isLoading ? (
         <p className="text-gray-500">Loading leaderboard...</p>
       ) : drivers.length === 0 ? (
-        <p className="text-gray-500">No driver data available.</p>
+        <p className="text-gray-500">No drivers found.</p>
       ) : (
-        <div className="space-y-2">
-          {drivers.map((d, i) => (
-            <div
-              key={d.uid}
-              className="bg-white p-4 rounded shadow flex justify-between items-center"
-            >
-              <div>
-                <p className="font-bold">{i + 1}. {d.name}</p>
-                <p className="text-sm text-gray-500">
-                  Avg Score: <span className={getScoreColor(d.avgScore)}>{d.avgScore}/100</span> · {d.count} trips
-                </p>
-              </div>
-              <p className="text-blue-600 font-semibold">
-                R{d.profit.toFixed(2)}
-              </p>
-            </div>
-          ))}
-        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left border-b">
+              <th className="py-2">Driver</th>
+              <th className="py-2">Trips</th>
+              <th className="py-2">Avg Profit</th>
+              <th className="py-2">Health Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {drivers.map((d, i) => (
+              <tr key={i} className="border-b">
+                <td className="py-2 font-medium">{d.name}</td>
+                <td className="py-2">{d.totalTrips}</td>
+                <td className="py-2">R{d.avgProfit}</td>
+                <td className="py-2">{d.avgScore}/100</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );
