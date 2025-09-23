@@ -6,8 +6,9 @@ import KPIBadge from './KPIBadge';
 import TripScoreBadge from './TripScoreBadge';
 import scoreTrip from '../utils/tripScorer';
 import MaintenancePredictor from './MaintenancePredictor';
-
-<MaintenancePredictor vehicleStats={trip.vehicleStats} />
+import DriverSentiment from './DriverSentiment';
+import TripReplay from './TripReplay';
+import DriverBadges from './DriverBadges';
 
 const TripDashboard = ({
   trip,
@@ -30,7 +31,10 @@ const TripDashboard = ({
     status = 'pending',
     breakTaken = true,
     remarks = [],
-    completedAt = null
+    completedAt = null,
+    statusHistory = [],
+    vehicleStats = {},
+    driverStats = {}
   } = trip;
 
   const revenue = analysis?.profitability?.revenue ?? 0;
@@ -69,6 +73,13 @@ const TripDashboard = ({
   };
 
   const score = scoreTrip(trip);
+
+  const enrichedDriverStats = {
+    totalTrips: driverStats.totalTrips ?? 0,
+    violationCount: driverStats.violationCount ?? 0,
+    avgHealthScore: driverStats.avgHealthScore ?? healthScore ?? 0,
+    avgProfit: driverStats.avgProfit ?? profit ?? 0
+  };
 
   return (
     <div
@@ -129,10 +140,38 @@ const TripDashboard = ({
         <TripScoreBadge score={score} />
       </div>
 
+      {/* Maintenance Predictor */}
+      {vehicleStats && (
+        <div className="mb-4">
+          <MaintenancePredictor vehicleStats={vehicleStats} />
+        </div>
+      )}
+
+      {/* Driver Sentiment */}
+      {remarks.length > 0 && (
+        <div className="mb-2">
+          <DriverSentiment trip={trip} />
+        </div>
+      )}
+
+      {/* Driver Badges */}
+      {enrichedDriverStats.totalTrips > 0 && (
+        <div className="mb-2">
+          <DriverBadges driverStats={enrichedDriverStats} />
+        </div>
+      )}
+
+      {/* Trip Replay */}
+      {coordinates.length > 0 && statusHistory.length > 0 && (
+        <div className="mb-4">
+          <TripReplay trip={trip} />
+        </div>
+      )}
+
       {/* Trip Timeline */}
-          {trip.statusHistory && trip.statusHistory.length > 0 && (
-              <TripTimeline statusHistory={trip.statusHistory} />
-          )}
+      {statusHistory.length > 0 && (
+        <TripTimeline statusHistory={statusHistory} />
+      )}
 
       {/* Metadata */}
       <p className="text-gray-600 mb-1 flex items-center gap-2">
