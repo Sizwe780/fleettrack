@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import TripDashboard from '../components/TripDashboard';
 import ExportButton from '../components/ExportButton';
 import SidebarLayout from '../components/SidebarLayout';
-import { collection, doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, onSnapshot, addDoc } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { db, messaging } from '../firebase';
 import { getToken } from 'firebase/messaging';
@@ -24,6 +24,7 @@ const Dashboard = () => {
   useEffect(() => {
     const auth = getAuth();
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      let unsubscribeTrips = () => {};
       if (user) {
         setUserId(user.uid);
 
@@ -42,16 +43,14 @@ const Dashboard = () => {
           }
         }
 
-        // Fetch role
         try {
           const userRef = doc(db, 'users', user.uid);
           const userSnap = await getDoc(userRef);
           const userRole = userSnap.exists() ? userSnap.data().role : 'driver';
           setRole(userRole);
 
-          // Real-time trip listener
           const path = `apps/fleet-track-app/users/${user.uid}/trips`;
-          const unsubscribeTrips = onSnapshot(collection(db, path), (snapshot) => {
+          unsubscribeTrips = onSnapshot(collection(db, path), (snapshot) => {
             const allTrips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             const visibleTrips = userRole === 'driver'
               ? allTrips.filter(t => t.driver_uid === user.uid)
@@ -59,8 +58,6 @@ const Dashboard = () => {
             setTrips(visibleTrips);
             setLoading(false);
           });
-
-          return () => unsubscribeTrips();
         } catch (err) {
           console.error('Dashboard fetch error:', err);
           setRole('driver');
@@ -72,6 +69,8 @@ const Dashboard = () => {
         setTrips([]);
         setLoading(false);
       }
+
+      return () => unsubscribeTrips();
     });
 
     return () => unsubscribe();
@@ -98,26 +97,49 @@ const Dashboard = () => {
     }
   };
 
+  const logAuditTrail = async (tripId, userId, action, reason) => {
+    const path = `apps/fleet-track-app/users/${userId}/trips/${tripId}/auditTrail`;
+    await addDoc(collection(db, path), {
+      action,
+      actor: userId,
+      timestamp: new Date().toISOString(),
+      reason
+    });
+  };
+
   const handleCompleteTrip = async (trip) => {
     try {
-      const res = await fetch('/api/tripComplete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trip, vehicleId: trip.vehicle_id })
-      });
-
-      const result = await res.json();
-      if (result.success) {
-        const path = `apps/fleet-track-app/users/${trip.driver_uid}/trips/${trip.id}`;
-        await setDoc(doc(db, path), {
-          status: 'completed',
-          completedAt: new Date().toISOString()
-        }, { merge: true });
-      } else {
-        console.error('Trip completion failed:', result.error);
+      if (role !== 'driver') {
+        console.warn('Unauthorized status change attempt');
+        return;
       }
+
+      const currentStatus = trip.status ?? 'pending';
+      const allowedTransitions = {
+        pending: 'departed',
+        departed: 'completed'
+      };
+
+      const nextStatus = allowedTransitions[currentStatus];
+      if (!nextStatus) {
+        console.warn(`Invalid status transition from ${currentStatus}`);
+        return;
+      }
+
+      const updatedHistory = Array.isArray(trip.statusHistory)
+        ? [...trip.statusHistory, { status: nextStatus, timestamp: new Date().toISOString() }]
+        : [{ status: nextStatus, timestamp: new Date().toISOString() }];
+
+      const path = `apps/fleet-track-app/users/${trip.driver_uid}/trips/${trip.id}`;
+      await setDoc(doc(db, path), {
+        status: nextStatus,
+        statusHistory: updatedHistory,
+        ...(nextStatus === 'completed' && { completedAt: new Date().toISOString() })
+      }, { merge: true });
+
+      await logAuditTrail(trip.id, trip.driver_uid, `Trip marked as ${nextStatus}`, 'Status transition via dashboard');
     } catch (err) {
-      console.error('API error:', err);
+      console.error('TripStatusEngine error:', err);
     }
   };
 
@@ -250,7 +272,7 @@ const Dashboard = () => {
                     onComplete={handleCompleteTrip}
                     isOffline={!navigator.onLine}
                     isSelected={false}
-                    onSelect={() => { }}
+                    onSelect={() => {}}
                     routeSuggestion={routeSuggestion}
                   />
                 );

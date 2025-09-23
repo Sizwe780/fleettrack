@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { addDoc, collection } from 'firebase/firestore';
 import { db } from '../firebase';
+import validateTripPayload from '../utils/tripValidator'; // ✅ OpsCert Patch 01
 
 const TripForm = ({ userId, onTripCreated }) => {
   const [origin, setOrigin] = useState('');
@@ -48,17 +49,13 @@ const TripForm = ({ userId, onTripCreated }) => {
       const analysisRes = await axios.post(`${process.env.REACT_APP_API_URL}/api/calculate-trip/`, tripData);
       const analysis = analysisRes.data;
 
-      // Step 2: Save to Django backend
+      // Step 2: Build enriched trip payload
       const fullTrip = {
         ...tripData,
         analysis,
         createdAt: new Date().toISOString()
       };
 
-      await axios.post(`${process.env.REACT_APP_API_URL}/api/trips/`, fullTrip);
-
-      // Step 3: Save to Firestore with enriched data
-      const path = `apps/fleet-track-app/users/${userId}/trips`;
       const enrichedTrip = {
         ...fullTrip,
         status: 'pending',
@@ -88,11 +85,25 @@ const TripForm = ({ userId, onTripCreated }) => {
         ]
       };
 
+      // ✅ Step 3: Validate payload before Firestore write
+      const { isValid, errors } = validateTripPayload(enrichedTrip);
+      if (!isValid) {
+        console.error('Trip validation failed:', errors);
+        setStatusMessage(`❌ Trip rejected: ${errors.join(', ')}`);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Step 4: Save to Django backend
+      await axios.post(`${process.env.REACT_APP_API_URL}/api/trips/`, fullTrip);
+
+      // Step 5: Save to Firestore
+      const path = `apps/fleet-track-app/users/${userId}/trips`;
       await addDoc(collection(db, path), enrichedTrip);
 
       if (onTripCreated) onTripCreated(enrichedTrip);
 
-      // Step 4: Reset form
+      // Step 6: Reset form
       setOrigin('');
       setDestination('');
       setDate('');

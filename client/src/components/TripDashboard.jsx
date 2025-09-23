@@ -1,6 +1,6 @@
 import React from 'react';
 import TripTimeline from './TripTimeline';
-import { MapPin, Clock, WifiOff, Route } from 'lucide-react';
+import { MapPin, Clock, WifiOff, Route, AlertTriangle } from 'lucide-react';
 import TripMap from './TripMap';
 import KPIBadge from './KPIBadge';
 import TripScoreBadge from './TripScoreBadge';
@@ -73,6 +73,7 @@ const TripDashboard = ({
   };
 
   const score = scoreTrip(trip);
+  const isCritical = healthScore < 50 || status === 'critical';
 
   const enrichedDriverStats = {
     totalTrips: driverStats.totalTrips ?? 0,
@@ -109,6 +110,14 @@ const TripDashboard = ({
           </button>
         </div>
       </div>
+
+      {/* Critical Alert */}
+      {isCritical && (
+        <div className="mb-2 p-2 bg-red-100 text-red-700 rounded-md text-sm font-semibold flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4" />
+          This trip has been flagged due to low health score.
+        </div>
+      )}
 
       {/* Health Score Badge */}
       {healthScore !== null && (
@@ -236,4 +245,4 @@ const TripDashboard = ({
   );
 };
 
-export default TripDashboard;
+export default TripDashboard
