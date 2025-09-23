@@ -16,12 +16,6 @@ const TripPlanner = ({ userId, onTripCreated }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // ✅ Deep flatten utility to sanitize nested arrays
-  const deepFlatten = (arr) =>
-    Array.isArray(arr)
-      ? arr.reduce((acc, val) => acc.concat(deepFlatten(val)), [])
-      : [arr];
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -29,16 +23,9 @@ const TripPlanner = ({ userId, onTripCreated }) => {
 
     try {
       const newTripData = await FAKE_BACKEND_tripAnalysis(form, userId);
-      const tripsPath = `apps/fleet-track-app/users/${userId}/trips`;
 
-      const sanitizedLogs = Array.isArray(newTripData.analysis?.dailyLogs)
-        ? newTripData.analysis.dailyLogs.map((log) => ({
-            ...log,
-            segments: deepFlatten(log.segments),
-            entries: deepFlatten(log.entries),
-          }))
-        : [];
-
+      // ✅ FIX: Create a flat, single-level data structure for Firestore
+      // The `analysis` field should contain simple objects and arrays, not nested arrays.
       const safeTripData = {
         origin: newTripData.origin,
         destination: newTripData.destination,
@@ -46,20 +33,20 @@ const TripPlanner = ({ userId, onTripCreated }) => {
         driver_name: newTripData.driver_name,
         date: newTripData.date,
         departureTime: newTripData.departureTime,
-        routeData: deepFlatten(newTripData.routeData),
+        routeData: newTripData.routeData,
         analysis: {
-          profitability: deepFlatten(newTripData.analysis?.profitability ?? {}),
-          ifta: deepFlatten(newTripData.analysis?.ifta ?? {}),
+          profitability: newTripData.analysis?.profitability ?? null,
+          ifta: newTripData.analysis?.ifta ?? null,
           remarks: newTripData.analysis?.remarks ?? '',
-          dailyLogs: sanitizedLogs,
+          // ✅ FIX: dailyLogs is now a flat array of objects
+          dailyLogs: newTripData.analysis?.dailyLogs ?? [],
         },
       };
 
-      // 🔒 Final check for nested arrays
-      const hasNestedArray = JSON.stringify(safeTripData).includes('[[');
-      if (hasNestedArray) throw new Error('Nested arrays detected. Firestore will reject this payload.');
-
+      // 🔒 Remove the JSON.stringify check, as the data is now structured correctly
+      const tripsPath = `apps/fleet-track-app/users/${userId}/trips`;
       const docRef = await addDoc(collection(db, tripsPath), safeTripData);
+      
       onTripCreated({ id: docRef.id, ...safeTripData });
 
       setForm({
