@@ -16,15 +16,19 @@ const TripPlanner = ({ userId, onTripCreated }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // 🔧 Utility to flatten arrays inside dailyLogs
+  // 🔧 Deep-safe utility to flatten nested arrays inside dailyLogs
   const flattenDailyLogs = (logs = []) =>
     logs.map((log) => {
       const flatLog = {};
       for (const key in log) {
         const value = log[key];
-        flatLog[key] = Array.isArray(value)
-          ? JSON.stringify(value) // Convert nested arrays to strings
-          : value;
+        if (Array.isArray(value)) {
+          flatLog[key] = value.map((item) =>
+            Array.isArray(item) ? JSON.stringify(item) : item
+          );
+        } else {
+          flatLog[key] = value;
+        }
       }
       return flatLog;
     });
