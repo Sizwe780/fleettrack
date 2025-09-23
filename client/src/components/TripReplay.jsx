@@ -8,8 +8,8 @@ const TripReplay = ({ trip }) => {
     if (!trip?.coordinates || trip.coordinates.length === 0) return;
 
     const enriched = trip.coordinates.map((coord, i) => ({
-      lat: coord[0],
-      lng: coord[1],
+      lat: Array.isArray(coord) ? coord[0] : coord.lat,
+      lng: Array.isArray(coord) ? coord[1] : coord.lng,
       timestamp: trip.statusHistory?.[i]?.timestamp || null,
       status: trip.statusHistory?.[i]?.status || null
     }));

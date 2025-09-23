@@ -230,19 +230,19 @@ const TripDashboard = ({
         }}
       />
 
-      {/* Complete Trip Button */}
-      {status !== 'completed' && (
-        <div className="mt-4">
-          <button
-            onClick={() => onComplete(trip)}
-            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-          >
-            Complete Trip
-          </button>
+     {/* Complete Trip Button */}
+            {status !== 'completed' && (
+                <div className="mt-4">
+                    <button
+                        onClick={() => onComplete(trip)}
+                        className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                    >
+                        Complete Trip
+                    </button>
+                </div>
+            )}
         </div>
-      )}
-    </div>
-  );
+    );
 };
 
 export default TripDashboard

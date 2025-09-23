@@ -1,21 +1,28 @@
 import React from 'react';
 
-const getBadges = (driverStats) => {
+const getBadges = (driverStats = {}) => {
+  const {
+    totalTrips = 0,
+    violationCount = 0,
+    avgHealthScore = 0,
+    avgProfit = 0
+  } = driverStats;
+
   const badges = [];
 
-  if (driverStats.totalTrips >= 100) {
+  if (totalTrips >= 100) {
     badges.push({ label: 'Century Driver', color: 'bg-yellow-100 text-yellow-800' });
   }
 
-  if (driverStats.violationCount === 0 && driverStats.totalTrips >= 20) {
+  if (violationCount === 0 && totalTrips >= 20) {
     badges.push({ label: 'Zero Violation', color: 'bg-green-100 text-green-800' });
   }
 
-  if (driverStats.avgHealthScore >= 90) {
+  if (avgHealthScore >= 90) {
     badges.push({ label: 'Fleet Health Champ', color: 'bg-blue-100 text-blue-800' });
   }
 
-  if (driverStats.avgProfit >= 1000) {
+  if (avgProfit >= 1000) {
     badges.push({ label: 'Profit Driver', color: 'bg-purple-100 text-purple-800' });
   }
 
@@ -27,12 +34,13 @@ const DriverBadges = ({ driverStats }) => {
 
   return (
     <div className="flex flex-wrap gap-2 mt-2">
-      {badges.map((badge, i) => (
-        <span key={i} className={`px-3 py-1 text-sm rounded-full font-medium ${badge.color}`}>
-          {badge.label}
-        </span>
-      ))}
-      {badges.length === 0 && (
+      {badges.length > 0 ? (
+        badges.map((badge, i) => (
+          <span key={i} className={`px-3 py-1 text-sm rounded-full font-medium ${badge.color}`}>
+            {badge.label}
+          </span>
+        ))
+      ) : (
         <span className="text-sm text-gray-500">No badges earned yet</span>
       )}
     </div>

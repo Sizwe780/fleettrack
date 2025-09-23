@@ -1,13 +1,17 @@
+// Imports
 import React, { useState, useEffect } from 'react';
 import TripDashboard from '../components/TripDashboard';
 import ExportButton from '../components/ExportButton';
 import SidebarLayout from '../components/SidebarLayout';
+import FleetHeatmap from '../components/FleetHeatmap';
 import { collection, doc, getDoc, setDoc, onSnapshot, addDoc } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { db, messaging } from '../firebase';
 import { getToken } from 'firebase/messaging';
 import getOptimalRoute from '../utils/routeOptimizer';
+import evaluateTripRisk from '../utils/tripFlagger';
 
+// Component
 const Dashboard = () => {
   const [trips, setTrips] = useState([]);
   const [role, setRole] = useState(null);
@@ -21,6 +25,7 @@ const Dashboard = () => {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Auth & Firestore Sync
   useEffect(() => {
     const auth = getAuth();
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -76,6 +81,7 @@ const Dashboard = () => {
     return () => unsubscribe();
   }, []);
 
+  // PWA Install Prompt
   useEffect(() => {
     const handleInstallPrompt = (e) => {
       e.preventDefault();
@@ -97,6 +103,7 @@ const Dashboard = () => {
     }
   };
 
+  // Audit Trail
   const logAuditTrail = async (tripId, userId, action, reason) => {
     const path = `apps/fleet-track-app/users/${userId}/trips/${tripId}/auditTrail`;
     await addDoc(collection(db, path), {
@@ -107,24 +114,15 @@ const Dashboard = () => {
     });
   };
 
+  // Trip Completion
   const handleCompleteTrip = async (trip) => {
     try {
-      if (role !== 'driver') {
-        console.warn('Unauthorized status change attempt');
-        return;
-      }
+      if (role !== 'driver') return;
 
       const currentStatus = trip.status ?? 'pending';
-      const allowedTransitions = {
-        pending: 'departed',
-        departed: 'completed'
-      };
-
+      const allowedTransitions = { pending: 'departed', departed: 'completed' };
       const nextStatus = allowedTransitions[currentStatus];
-      if (!nextStatus) {
-        console.warn(`Invalid status transition from ${currentStatus}`);
-        return;
-      }
+      if (!nextStatus) return;
 
       const updatedHistory = Array.isArray(trip.statusHistory)
         ? [...trip.statusHistory, { status: nextStatus, timestamp: new Date().toISOString() }]
@@ -138,11 +136,49 @@ const Dashboard = () => {
       }, { merge: true });
 
       await logAuditTrail(trip.id, trip.driver_uid, `Trip marked as ${nextStatus}`, 'Status transition via dashboard');
+
+      const { shouldFlag, reasons } = evaluateTripRisk(trip);
+      if (shouldFlag) {
+        await setDoc(doc(db, path), {
+          status: 'critical',
+          flaggedAt: new Date().toISOString(),
+          flagReason: reasons.join(', ')
+        }, { merge: true });
+
+        await logAuditTrail(trip.id, trip.driver_uid, 'Trip auto-flagged as critical', reasons.join(', '));
+      }
     } catch (err) {
       console.error('TripStatusEngine error:', err);
     }
   };
 
+  // Submit Test Trip
+  const handleSubmitTestTrip = async () => {
+    const path = `apps/fleet-track-app/users/${userId}/trips`;
+    await addDoc(collection(db, path), {
+      driver_uid: userId,
+      origin: 'Gqeberha',
+      destination: 'East London',
+      date: new Date().toISOString(),
+      coordinates: [[-33.96, 25.61], [-33.97, 25.62]],
+      analysis: {
+        profitability: { revenue: 1500, netProfit: 1200, distanceMiles: 180 },
+        ifta: { fuelUsed: 45 }
+      },
+      geo: {
+        region: 'Eastern Cape',
+        city: 'Gqeberha',
+        lat: -33.96,
+        lng: 25.61
+      },
+      status: 'pending',
+      healthScore: 88,
+      breakTaken: true,
+      remarks: ['Trip submitted manually for testing']
+    });
+  };
+
+  // Filters and Grouping
   const filteredTrips = trips
     .filter(t => t.driver_name?.toLowerCase().includes(driverFilter.toLowerCase()))
     .filter(t => (t.analysis?.profitability?.netProfit ?? 0) >= minProfit)
@@ -183,7 +219,7 @@ const Dashboard = () => {
     return (
       <SidebarLayout role="loading" title="Dashboard">
         <div className="flex justify-center items-center h-96">
-          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b          border-blue-600"></div>
         </div>
       </SidebarLayout>
     );
@@ -192,6 +228,7 @@ const Dashboard = () => {
   return (
     <SidebarLayout role={role} title="Dashboard">
       <div className="max-w-6xl mx-auto space-y-6">
+        {/* PWA Install Button */}
         {showInstallButton && (
           <div className="mb-4">
             <button
@@ -201,6 +238,23 @@ const Dashboard = () => {
               Install FleetTrack
             </button>
           </div>
+        )}
+
+        {/* Submit Test Trip Button */}
+        {role === 'driver' && (
+          <div className="mb-4">
+            <button
+              onClick={handleSubmitTestTrip}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+            >
+              Submit Test Trip
+            </button>
+          </div>
+        )}
+
+        {/* Fleet Heatmap */}
+        {role !== 'driver' && filteredTrips.length > 0 && (
+          <FleetHeatmap trips={filteredTrips} />
         )}
 
         {/* Filters */}
