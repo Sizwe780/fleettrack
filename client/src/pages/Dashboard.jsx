@@ -3,7 +3,7 @@ import TripDashboard from '../components/TripDashboard';
 import ExportButton from '../components/ExportButton';
 import SidebarLayout from '../components/SidebarLayout';
 import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { db, messaging } from '../firebase';
 import { getToken } from 'firebase/messaging';
 import getOptimalRoute from '../utils/routeOptimizer';
@@ -21,45 +21,68 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchUserRoleAndTrips = async () => {
-      const auth = getAuth();
-      const user = auth.currentUser;
-      if (!user) return;
+    let isMounted = true;
 
-      // Push notification setup
-      if ('Notification' in window && 'serviceWorker' in navigator) {
-        try {
-          const permission = await Notification.requestPermission();
-          if (permission === 'granted') {
-            const token = await getToken(messaging, {
-              vapidKey: 'BGg5o1gxS60Zbw8_XVKalgqAQv4G-wnzx5AQnYryf-J4I5kHf86xRREOW2MRuxNiRk7UMol_YguUfaUw67cv7bY'
-            });
-            await setDoc(doc(db, 'users', user.uid), { fcmToken: token }, { merge: true });
+    const fetchUserRoleAndTrips = async (user) => {
+      try {
+        // FCM setup (non-blocking)
+        if ('Notification' in window && 'serviceWorker' in navigator) {
+          try {
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+              const token = await getToken(messaging, {
+                vapidKey: 'BGg5o1gxS60Zbw8_XVKalgqAQv4G-wnzx5AQnYryf-J4I5kHf86xRREOW2MRuxNiRk7UMol_YguUfaUw67cv7bY'
+              });
+              await setDoc(doc(db, 'users', user.uid), { fcmToken: token }, { merge: true });
+            }
+          } catch (err) {
+            console.error('FCM setup error:', err);
           }
-        } catch (err) {
-          console.error('FCM setup error:', err);
+        }
+
+        // Fetch role
+        const userRef = doc(db, 'users', user.uid);
+        const userSnap = await getDoc(userRef);
+        const userRole = userSnap.exists() ? userSnap.data().role : 'driver';
+        if (isMounted) setRole(userRole);
+
+        // Fetch trips
+        const snapshot = await getDocs(collection(db, 'trips'));
+        const allTrips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        const visibleTrips = userRole === 'driver'
+          ? allTrips.filter(t => t.driver_uid === user.uid)
+          : allTrips;
+
+        if (isMounted) {
+          setTrips(visibleTrips);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('Dashboard fetch error:', err);
+        if (isMounted) {
+          setRole('driver'); // fallback
+          setTrips([]);
+          setLoading(false);
         }
       }
-
-      // Fetch role
-      const userRef = doc(db, 'users', user.uid);
-      const userSnap = await getDoc(userRef);
-      const userRole = userSnap.exists() ? userSnap.data().role : 'driver';
-      setRole(userRole);
-
-      // Fetch trips
-      const snapshot = await getDocs(collection(db, 'trips'));
-      const allTrips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-      const visibleTrips = userRole === 'driver'
-        ? allTrips.filter(t => t.driver_uid === user.uid)
-        : allTrips;
-
-      setTrips(visibleTrips);
-      setLoading(false);
     };
 
-    fetchUserRoleAndTrips();
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        fetchUserRoleAndTrips(user);
+      } else {
+        setRole('driver');
+        setTrips([]);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -154,7 +177,6 @@ const Dashboard = () => {
   return (
     <SidebarLayout role={role} title="Dashboard">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Install Prompt */}
         {showInstallButton && (
           <div className="mb-4">
             <button
