@@ -72,7 +72,7 @@ const TripPlanner = ({ onTripCreated }) => {
       };
 
       const cleanTripData = JSON.parse(JSON.stringify(safeTripData));
-      const docRef = await addDoc(collection(db, 'trips'), cleanTripData);
+      const docRef = await addDoc(collection(db, `apps/${appId}/trips`), cleanTripData);
       console.log('Trip added with ID:', docRef.id);
 
       onTripCreated?.({ id: docRef.id, ...cleanTripData });
