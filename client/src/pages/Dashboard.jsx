@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import TripDashboard from '../components/TripDashboard';
 import ExportButton from '../components/ExportButton';
 import SidebarLayout from '../components/SidebarLayout';
-import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { db, messaging } from '../firebase';
 import { getToken } from 'firebase/messaging';
@@ -11,6 +11,7 @@ import getOptimalRoute from '../utils/routeOptimizer';
 const Dashboard = () => {
   const [trips, setTrips] = useState([]);
   const [role, setRole] = useState(null);
+  const [userId, setUserId] = useState(null);
   const [driverFilter, setDriverFilter] = useState('');
   const [minProfit, setMinProfit] = useState(0);
   const [maxFuel, setMaxFuel] = useState(9999);
@@ -21,17 +22,18 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let isMounted = true;
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setUserId(user.uid);
 
-    const fetchUserRoleAndTrips = async (user) => {
-      try {
-        // FCM setup (non-blocking)
+        // FCM setup
         if ('Notification' in window && 'serviceWorker' in navigator) {
           try {
             const permission = await Notification.requestPermission();
             if (permission === 'granted') {
               const token = await getToken(messaging, {
-                vapidKey: 'BGg5o1gxS60Zbw8_XVKalgqAQv4G-wnzx5AQnYryf-J4I5kHf86xRREOW2MRuxNiRk7UMol_YguUfaUw67cv7bY'
+                vapidKey: 'YOUR_VAPID_KEY'
               });
               await setDoc(doc(db, 'users', user.uid), { fcmToken: token }, { merge: true });
             }
@@ -41,37 +43,30 @@ const Dashboard = () => {
         }
 
         // Fetch role
-        const userRef = doc(db, 'users', user.uid);
-        const userSnap = await getDoc(userRef);
-        const userRole = userSnap.exists() ? userSnap.data().role : 'driver';
-        if (isMounted) setRole(userRole);
+        try {
+          const userRef = doc(db, 'users', user.uid);
+          const userSnap = await getDoc(userRef);
+          const userRole = userSnap.exists() ? userSnap.data().role : 'driver';
+          setRole(userRole);
 
-        // Fetch trips
-        const snapshot = await getDocs(collection(db, 'trips'));
-        const allTrips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          // Real-time trip listener
+          const path = `apps/fleet-track-app/users/${user.uid}/trips`;
+          const unsubscribeTrips = onSnapshot(collection(db, path), (snapshot) => {
+            const allTrips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const visibleTrips = userRole === 'driver'
+              ? allTrips.filter(t => t.driver_uid === user.uid)
+              : allTrips;
+            setTrips(visibleTrips);
+            setLoading(false);
+          });
 
-        const visibleTrips = userRole === 'driver'
-          ? allTrips.filter(t => t.driver_uid === user.uid)
-          : allTrips;
-
-        if (isMounted) {
-          setTrips(visibleTrips);
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error('Dashboard fetch error:', err);
-        if (isMounted) {
-          setRole('driver'); // fallback
+          return () => unsubscribeTrips();
+        } catch (err) {
+          console.error('Dashboard fetch error:', err);
+          setRole('driver');
           setTrips([]);
           setLoading(false);
         }
-      }
-    };
-
-    const auth = getAuth();
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        fetchUserRoleAndTrips(user);
       } else {
         setRole('driver');
         setTrips([]);
@@ -79,10 +74,7 @@ const Dashboard = () => {
       }
     });
 
-    return () => {
-      isMounted = false;
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -116,7 +108,8 @@ const Dashboard = () => {
 
       const result = await res.json();
       if (result.success) {
-        await setDoc(doc(db, 'trips', trip.id), {
+        const path = `apps/fleet-track-app/users/${trip.driver_uid}/trips/${trip.id}`;
+        await setDoc(doc(db, path), {
           status: 'completed',
           completedAt: new Date().toISOString()
         }, { merge: true });
@@ -241,7 +234,8 @@ const Dashboard = () => {
         )}
 
         {/* Grouped Trips */}
-        {Object.entries(groupedTrips).map(([group, trips]) => (
+                {/* Grouped Trips */}
+                {Object.entries(groupedTrips).map(([group, trips]) => (
           trips.length > 0 && (
             <div key={group} className="space-y-4 mb-8">
               <h2 className="text-xl font-bold capitalize">
