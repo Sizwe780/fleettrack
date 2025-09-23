@@ -41,7 +41,7 @@ app.use('/api/trips', require('./routes/trips'));
 app.use('/api/fleet-summary', require('./routes/fleetSummary'));
 app.use('/api/compliance-score', require('./routes/complianceScore'));
 app.use('/api/incidents', require('./routes/incidents'));
-
+app.use('/api/trips', require('./routes/trips'));
 
 // Healthcheck
 app.get('/api/health', (req, res) => {
