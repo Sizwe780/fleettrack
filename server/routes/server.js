@@ -41,8 +41,10 @@ app.use('/api/trips', require('./routes/trips'));
 app.use('/api/fleet-summary', require('./routes/fleetSummary'));
 app.use('/api/compliance-score', require('./routes/complianceScore'));
 app.use('/api/incidents', require('./routes/incidents'));
-app.use('/api/trips', require('./routes/trips'));
 
+app.use('/api/trips', require('./routes/trips'));
+const logPushRoutes = require('./routes/logPush');
+app.use('/api/log-push', logPushRoutes);
 // Healthcheck
 app.get('/api/health', (req, res) => {
   res.json({ status: 'FleetTrack v3.0 backend is live 🚀' });
