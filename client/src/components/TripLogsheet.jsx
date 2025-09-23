@@ -15,8 +15,8 @@ export default function TripLogsheet({ trip }) {
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
       style: 'mapbox://styles/mapbox/streets-v11',
-      center: [28, -29], 
-      zoom: 5
+      center: [trip.origin.longitude, trip.origin.latitude],
+      zoom: 8
     });
 
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
@@ -25,56 +25,37 @@ export default function TripLogsheet({ trip }) {
 
     new mapboxgl.Marker().setLngLat([trip.destination.longitude, trip.destination.latitude]).addTo(map);
 
-    const getRoute = async () => {
-      const start = `${trip.origin.longitude},${trip.origin.latitude}`;
-      const end = `${trip.destination.longitude},${trip.destination.latitude}`;
-      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start};${end}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
+    map.on('load', () => {
+      if (trip.routeData && trip.routeData.coordinates.length > 0) {
+        map.addSource('route', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            properties: {},
+            geometry: trip.routeData
+          }
+        });
+        map.addLayer({
+          id: 'route',
+          type: 'line',
+          source: 'route',
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round'
+          },
+          paint: {
+            'line-color': '#3887be',
+            'line-width': 5,
+            'line-opacity': 0.75
+          }
+        });
 
-      try {
-        const response = await fetch(url);
-        const data = await response.json();
-        const route = data.routes[0].geometry;
-
-        if (map.getSource('route')) {
-          map.getSource('route').setData({
-            'type': 'Feature',
-            'properties': {},
-            'geometry': route
-          });
-        } else {
-          map.addLayer({
-            id: 'route',
-            type: 'line',
-            source: {
-              type: 'geojson',
-              data: {
-                'type': 'Feature',
-                'properties': {},
-                'geometry': route
-              }
-            },
-            layout: {
-              'line-join': 'round',
-              'line-cap': 'round'
-            },
-            paint: {
-              'line-color': '#3887be',
-              'line-width': 5,
-              'line-opacity': 0.75
-            }
-          });
-        }
         const bounds = new mapboxgl.LngLatBounds();
         bounds.extend([trip.origin.longitude, trip.origin.latitude]);
         bounds.extend([trip.destination.longitude, trip.destination.latitude]);
         map.fitBounds(bounds, { padding: 50 });
-
-      } catch (error) {
-        console.error('Error fetching route:', error);
       }
-    };
-
-    map.on('load', getRoute);
+    });
 
     return () => map.remove();
   }, [trip]);
@@ -88,7 +69,6 @@ export default function TripLogsheet({ trip }) {
       startY: 30,
       head: [['Field', 'Details']],
       body: [
-        ['Trip ID', trip._id || 'N/A'],
         ['Driver Name', trip.driver_name || 'N/A'],
         ['Origin', trip.origin.location || 'N/A'],
         ['Destination', trip.destination.location || 'N/A'],
