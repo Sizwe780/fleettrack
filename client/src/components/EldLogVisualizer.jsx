@@ -1,51 +1,29 @@
-const TripDetails = ({ trip }) => {
-    if (!trip) {
-      return (
-        <div className="text-center p-10 text-gray-600">
-          Select a trip from <strong>"My Trips"</strong> to see the details.
+import React from 'react';
+import TripLogsheet from './TripLogsheet';
+import ExportButton from './ExportButton';
+import TriplogsheetGenerator from './TriplogsheetGenerator';
+
+const EldLogVisualizer = ({ trip }) => {
+  const logs = TriplogsheetGenerator(trip); // ✅ normalized logsheets
+
+  if (logs.length === 0) {
+    return <p className="text-sm text-gray-500">No logsheets available for this trip.</p>;
+  }
+
+  return (
+    <div className="space-y-8">
+      <h2 className="text-xl font-bold mb-4">📋 Daily Logsheets</h2>
+      {logs.map((log, index) => (
+        <div key={index} className="border rounded-xl p-4 bg-gray-50 shadow-sm" id={`logsheet-${index}`}>
+          <TripLogsheet log={log} />
+          <ExportButton
+            targetId={`logsheet-${index}`}
+            filename={`FleetTrack_Logsheet_${trip.id}_Day${index + 1}.pdf`}
+          />
         </div>
-      );
-    }
-  
-    const { analysis = {}, routeData } = trip;
-    const { profitability, ifta, remarks, dailyLogs } = analysis;
-  
-    return (
-      <div className="space-y-6">
-        <TripHeader trip={trip} />
-        <TripMap routeData={routeData} />
-  
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {profitability ? (
-            <ProfitabilityCard data={profitability} />
-          ) : (
-            <PlaceholderCard title="Profitability" />
-          )}
-  
-          {ifta ? (
-            <IftaCard data={ifta} />
-          ) : (
-            <PlaceholderCard title="IFTA Summary" />
-          )}
-  
-          <DocumentsCard tripId={trip.id} />
-        </div>
-  
-        {remarks ? (
-          <HosComplianceCard remarks={remarks} />
-        ) : (
-          <PlaceholderCard title="HOS Compliance" />
-        )}
-  
-        {Array.isArray(dailyLogs) && dailyLogs.length > 0 ? (
-          <div className="space-y-4">
-            {dailyLogs.map((log, index) => (
-              <EldLogVisualizer key={index} dailyLog={log} />
-            ))}
-          </div>
-        ) : (
-          <PlaceholderCard title="ELD Logs" />
-        )}
-      </div>
-    );
-  };
+      ))}
+    </div>
+  );
+};
+
+export default EldLogVisualizer;

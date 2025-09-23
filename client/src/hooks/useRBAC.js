@@ -18,16 +18,16 @@ export const useRBAC = () => {
           return;
         }
 
-        const userDoc = await getDoc(doc(db, 'user', user.uid)); // ✅ matches Firestore rules
+        const userDoc = await getDoc(doc(db, 'users', user.uid)); // ✅ matches Firestore rules
         if (!userDoc.exists()) {
           console.warn(`RBAC: No role document found for UID ${user.uid}`);
-          setRole(null);
+          setRole('driver'); // fallback to default role
         } else {
-          setRole(userDoc.data().role);
+          setRole(userDoc.data().role || 'driver');
         }
       } catch (err) {
         console.error('RBAC fetch error:', err.message);
-        setRole(null);
+        setRole('driver'); // fallback on error
       } finally {
         setLoading(false);
       }
@@ -40,6 +40,7 @@ export const useRBAC = () => {
     role,
     isDriver: role === 'driver',
     isAdmin: role === 'admin',
+    isFleetManager: role === 'fleet_manager',
     loading,
   };
 };

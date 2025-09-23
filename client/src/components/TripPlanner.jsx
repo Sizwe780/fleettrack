@@ -1,20 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { addDoc, collection } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import FAKE_BACKEND_tripAnalysis from '../utils/fakeBackend';
 import { getAuth } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { useRBAC } from '../hooks/useRBAC';
+import generateTripLogsheet from '../utils/generateTripLogsheet';
 
 const TripPlanner = ({ onTripCreated, appId }) => {
   const TEST_MODE = true;
 
-  useEffect(() => {
-    const user = getAuth().currentUser;
-    console.log('Logged-in UID:', user?.uid);
-  }, []);
-
   const [form, setForm] = useState({
+    currentLocation: '',
     origin: 'Gqeberha, EC',
     destination: 'Cape Town, WC',
     cycleUsed: '25',
@@ -27,6 +24,19 @@ const TripPlanner = ({ onTripCreated, appId }) => {
   const [error, setError] = useState(null);
   const navigate = useNavigate();
   const { isDriver, loading: roleLoading } = useRBAC();
+
+  useEffect(() => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        const locationString = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+        setForm((prev) => ({ ...prev, currentLocation: locationString }));
+      },
+      (err) => {
+        console.warn('Geolocation error:', err.message);
+      }
+    );
+  }, []);
 
   const flattenDailyLogs = (logs = []) =>
     logs.map((log) => {
@@ -53,7 +63,22 @@ const TripPlanner = ({ onTripCreated, appId }) => {
       const userId = user.uid;
       const newTripData = await FAKE_BACKEND_tripAnalysis(form, userId);
 
+      const logs = generateTripLogsheet(
+        newTripData.routeData.estimatedTime,
+        newTripData.departureTime
+      );
+
+      const hasHOSViolation = logs.some(log =>
+        log.blocks.filter(b => b.type === 'driving')
+          .some(b => {
+            const start = parseFloat(b.start.split(':')[0]) + parseFloat(b.start.split(':')[1]) / 60;
+            const end = parseFloat(b.end.split(':')[0]) + parseFloat(b.end.split(':')[1]) / 60;
+            return end - start > 4;
+          })
+      );
+
       const safeTripData = {
+        currentLocation: newTripData.currentLocation,
         origin: newTripData.origin,
         destination: newTripData.destination,
         cycleUsed: newTripData.cycleUsed,
@@ -61,7 +86,7 @@ const TripPlanner = ({ onTripCreated, appId }) => {
         driver_uid: userId,
         date: newTripData.date,
         departureTime: newTripData.departureTime,
-        coordinates: newTripData.routeData.path.map(([lng, lat]) => ({ lng, lat })), // ✅ no nested arrays
+        coordinates: newTripData.routeData.path.map(([lng, lat]) => ({ lng, lat })),
         routeData: {
           path: JSON.stringify(newTripData.routeData.path),
           estimatedTime: newTripData.routeData.estimatedTime,
@@ -70,16 +95,22 @@ const TripPlanner = ({ onTripCreated, appId }) => {
           profitability: newTripData.analysis?.profitability ?? null,
           ifta: newTripData.analysis?.ifta ?? null,
           remarks: newTripData.analysis?.remarks ?? '',
-          dailyLogs: flattenDailyLogs(newTripData.analysis?.dailyLogs),
+          dailyLogs: flattenDailyLogs(logs),
         },
-        status: 'pending',
+        status: hasHOSViolation ? 'critical' : 'pending',
+        flagReason: hasHOSViolation ? 'HOS violation: driving block exceeds 4h' : null,
         healthScore: newTripData.analysis?.healthScore ?? 100,
+        createdAt: serverTimestamp(),
       };
 
+      console.log('Submitting trip payload:', safeTripData);
+
       const docRef = await addDoc(
-        collection(db, `apps/${appId}/trips`), // ✅ matches dashboard listener
+        collection(db, `apps/${appId}/trips`),
         safeTripData
       );
+
+      console.log('Trip successfully submitted with ID:', docRef.id);
 
       onTripCreated?.({ id: docRef.id, ...safeTripData });
       navigate('/dashboard', { replace: true });
@@ -122,6 +153,7 @@ const TripPlanner = ({ onTripCreated, appId }) => {
       <h1 className="text-3xl font-bold mb-6">Plan a New Trip</h1>
       <form onSubmit={handleSubmit} className="bg-white p-6 rounded-xl shadow-md border space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Input label="Current Location" name="currentLocation" value={form.currentLocation} />
           <Input label="Origin" name="origin" value={form.origin} />
           <Input label="Destination" name="destination" value={form.destination} />
           <Input label="Cycle Used (hrs)" name="cycleUsed" value={form.cycleUsed} type="number" />

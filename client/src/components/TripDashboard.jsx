@@ -1,19 +1,50 @@
 import React, { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import TripReplay from './TripReplay';
-// import FleetHeatmap from './FleetHeatmap'; // Optional
-// import DriverLeaderboard from './DriverLeaderboard'; // Optional
+
+// ✅ Core trip modules
+import TripReplayWithStops from './TripReplayWithStops';
+import TripStatusManager from './TripStatusManager';
+import TripStatusBadge from './TripStatusBadge';
+import ComplianceSummary from './ComplianceSummary';
+import TripProfitCard from './TripProfitCard';
+import IncidentReporter from './IncidentReporter';
+import TripInsightsPanel from './TripInsightsPanel';
+import TripSignatureBlock from './TripSignatureBlock';
+import AuditTrailViewer from './AuditTrailViewer';
+import TripMap from './TripMap';
+import LogsheetCanvas from './LogsheetCanvas';
+
+// ✅ Fixed local components
+import FleetTrackExportConsole from './FleetTrackExportConsole';
+import TripExportPreview from './TripExportPreview';
+import DriverLeaderboard from './DriverLeaderboard';
+import FleetHeatmap from './FleetHeatmap';
+import TripClusterMap from './TripClusterMap';
+import MaintenanceTracker from './MaintenanceTracker';
+import OfflineTripLogger from './OfflineTripLogger';
+import SyncStatusTracker from './SyncStatusTracker';
+import NotificationCenter from './NotificationCenter';
+import ExportButton from './ExportButton';
+import BatchExportPanel from './BatchExportPanel';
+import TripExportSignatureBlock from './TripExportSignatureBlock';
+import AdvancedRBACEditor from './AdvancedRBACEditor';
+import FirestoreRuleVisualizer from './FirestoreRuleVisualizer';
+import RBACValidator from './RBACValidator';
 
 export default function TripDashboard({ userId }) {
   const [trips, setTrips] = useState([]);
   const [showReplay, setShowReplay] = useState(null);
 
   useEffect(() => {
-    const path = `apps/fleet-track-app/users/${userId}/trips`;
+    const path = `apps/fleet-track-app/trips`;
     const unsubscribe = onSnapshot(collection(db, path), (snapshot) => {
-      const entries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      const sorted = entries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      const entries = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(t => t.driver_uid === userId);
+      const sorted = entries.sort((a, b) =>
+        new Date(b.createdAt ?? b.date) - new Date(a.createdAt ?? a.date)
+      );
       setTrips(sorted);
     });
 
@@ -54,10 +85,6 @@ export default function TripDashboard({ userId }) {
         </div>
       </div>
 
-      {/* Optional Modules */}
-      {/* <FleetHeatmap trips={trips} /> */}
-      {/* <DriverLeaderboard trips={trips} /> */}
-
       {/* Compliance Export */}
       <button
         onClick={() => console.log('Exporting audit logs...')}
@@ -71,11 +98,20 @@ export default function TripDashboard({ userId }) {
         <p className="text-sm text-gray-500 mt-4">No trips found. Submit one to get started.</p>
       ) : (
         trips.map(trip => (
-          <div key={trip.id} className={`p-4 rounded-xl shadow-md border ${trip.status === 'critical' ? 'border-red-500 bg-red-50' : 'bg-white'}`}>
+          <div
+            key={trip.id}
+            className={`p-4 rounded-xl shadow-md border ${
+              trip.status === 'critical' ? 'border-red-500 bg-red-50' : 'bg-white'
+            }`}
+          >
             <div className="flex justify-between items-center mb-2">
-              <h3 className="text-lg font-semibold">{trip.origin} → {trip.destination}</h3>
-              <span className="text-xs text-gray-500">{new Date(trip.date).toLocaleString()}</span>
+              <h3 className="text-lg font-semibold">
+                {trip.origin} → {trip.destination}
+              </h3>
+              <TripStatusBadge status={trip.status} />
             </div>
+
+            <TripStatusManager trip={trip} onStatusUpdate={(id, status) => console.log('Status updated:', id, status)} />
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
@@ -95,6 +131,24 @@ export default function TripDashboard({ userId }) {
                 <p>{trip.analysis?.ifta?.fuelUsed ?? '—'} L</p>
               </div>
             </div>
+
+            {trip.currentLocation && (
+              <div className="mt-2 text-sm text-gray-600">
+                📍 <strong>Current Location:</strong> {trip.currentLocation}
+              </div>
+            )}
+
+            {trip.departureTime && (
+              <div className="mt-1 text-sm text-gray-600">
+                🕒 <strong>Departure Time:</strong> {trip.departureTime}
+              </div>
+            )}
+
+            {trip.analysis?.remarks && (
+              <div className="mt-2 text-sm text-gray-700">
+                🧾 <strong>Remarks:</strong> {trip.analysis.remarks}
+              </div>
+            )}
 
             {trip.flagReason && (
               <div className="mt-3 text-sm text-red-600">
@@ -121,6 +175,34 @@ export default function TripDashboard({ userId }) {
               </div>
             )}
 
+            <ComplianceSummary trip={trip} />
+            <TripProfitCard trip={trip} />
+            <TripInsightsPanel trip={trip} />
+            <AuditTrailViewer trip={trip} />
+            <IncidentReporter tripId={trip.id} />
+            <TripSignatureBlock driverName={trip.driver_name} />
+
+            {/* ✅ Trip Map */}
+            {trip.routeData?.path && (
+              <div className="mt-6">
+                <h4 className="text-sm font-semibold mb-2">🗺️ Route Overview</h4>
+                <TripMap
+                  origin={trip.origin}
+                  destination={trip.destination}
+                  routeData={trip.routeData}
+                />
+              </div>
+            )}
+
+            {/* ✅ Logsheet Renderer */}
+            {trip.analysis?.dailyLogs?.length > 0 && (
+              <div className="mt-6">
+                <h4 className="text-sm font-semibold mb-2">📋 Daily Logsheet</h4>
+                <LogsheetCanvas logs={trip.analysis.dailyLogs} />
+              </div>
+            )}
+
+            {/* ✅ Replay Toggle */}
             {trip.coordinates && (
               <>
                 <button
@@ -129,7 +211,7 @@ export default function TripDashboard({ userId }) {
                 >
                   {showReplay === trip.id ? '⏹ Stop Replay' : '▶️ Replay Trip'}
                 </button>
-                {showReplay === trip.id && <TripReplay coordinates={trip.coordinates} />}
+                {showReplay === trip.id && <TripReplayWithStops trip={trip} />}
               </>
             )}
           </div>
