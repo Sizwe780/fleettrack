@@ -1,70 +1,123 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
 
-const STATUS_LINES = {
-  'Off Duty': 20,
-  'Sleeper Berth': 40,
-  'Driving': 60,
-  'On Duty': 80,
-};
+mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN;
 
-const HOURS = Array.from({ length: 25 }, (_, i) => i); // 0 to 24
+export default function TripLogsheet({ trip }) {
+  const mapContainerRef = useRef(null);
 
-const TripLogsheet = ({ log }) => {
-  const { driver_name, date, tripId, cycleUsed, location, remarks, segments } = log;
+  useEffect(() => {
+    if (!trip || !mapContainerRef.current) return;
 
-  const timeToX = (timeStr) => {
-    const [h, m] = timeStr.split(':').map(Number);
-    return (h + m / 60) * 20; // 20px per hour
+    const map = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: 'mapbox://styles/mapbox/streets-v11',
+      center: [28, -29], 
+      zoom: 5
+    });
+
+    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+    new mapboxgl.Marker().setLngLat([trip.origin.longitude, trip.origin.latitude]).addTo(map);
+
+    new mapboxgl.Marker().setLngLat([trip.destination.longitude, trip.destination.latitude]).addTo(map);
+
+    const getRoute = async () => {
+      const start = `${trip.origin.longitude},${trip.origin.latitude}`;
+      const end = `${trip.destination.longitude},${trip.destination.latitude}`;
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start};${end}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
+
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+        const route = data.routes[0].geometry;
+
+        if (map.getSource('route')) {
+          map.getSource('route').setData({
+            'type': 'Feature',
+            'properties': {},
+            'geometry': route
+          });
+        } else {
+          map.addLayer({
+            id: 'route',
+            type: 'line',
+            source: {
+              type: 'geojson',
+              data: {
+                'type': 'Feature',
+                'properties': {},
+                'geometry': route
+              }
+            },
+            layout: {
+              'line-join': 'round',
+              'line-cap': 'round'
+            },
+            paint: {
+              'line-color': '#3887be',
+              'line-width': 5,
+              'line-opacity': 0.75
+            }
+          });
+        }
+        const bounds = new mapboxgl.LngLatBounds();
+        bounds.extend([trip.origin.longitude, trip.origin.latitude]);
+        bounds.extend([trip.destination.longitude, trip.destination.latitude]);
+        map.fitBounds(bounds, { padding: 50 });
+
+      } catch (error) {
+        console.error('Error fetching route:', error);
+      }
+    };
+
+    map.on('load', getRoute);
+
+    return () => map.remove();
+  }, [trip]);
+
+  const handleExport = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.text("Daily Logsheet", 14, 22);
+
+    doc.autoTable({
+      startY: 30,
+      head: [['Field', 'Details']],
+      body: [
+        ['Trip ID', trip._id || 'N/A'],
+        ['Driver Name', trip.driver_name || 'N/A'],
+        ['Origin', trip.origin.location || 'N/A'],
+        ['Destination', trip.destination.location || 'N/A'],
+        ['Date', trip.date || 'N/A'],
+        ['Departure Time', trip.departure_time || 'N/A'],
+        ['Cycle Used', trip.cycle_used || 'N/A']
+      ]
+    });
+
+    doc.setFontSize(14);
+    doc.text("Remarks:", 14, doc.autoTable.previous.finalY + 10);
+    doc.setFontSize(12);
+    const splitText = doc.splitTextToSize(trip.remarks || 'No remarks provided.', 180);
+    doc.text(splitText, 14, doc.autoTable.previous.finalY + 18);
+
+    doc.save(`logsheet-${trip._id || 'new-trip'}.pdf`);
   };
 
+  if (!trip) return null;
+
   return (
-    <div className="border p-4 rounded-xl bg-white shadow-md mb-6">
-      <h2 className="text-lg font-bold mb-2">🧾 FleetTrack Logsheet</h2>
-      <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-        <div><strong>Driver:</strong> {driver_name}</div>
-        <div><strong>Date:</strong> {date}</div>
-        <div><strong>Trip ID:</strong> {tripId}</div>
-        <div><strong>Cycle Used:</strong> {cycleUsed} hrs</div>
-        <div><strong>Location:</strong> {location}</div>
-      </div>
-
-      <svg width="500" height="120" className="border mb-4">
-        {/* Horizontal lines for statuses */}
-        {Object.entries(STATUS_LINES).map(([status, y]) => (
-          <line key={status} x1="0" y1={y} x2="480" y2={y} stroke="#ccc" />
-        ))}
-
-        {/* Vertical hour markers */}
-        {HOURS.map((h) => (
-          <line key={h} x1={h * 20} y1="10" x2={h * 20} y2="90" stroke="#eee" />
-        ))}
-
-        {/* Duty status segments */}
-        {segments.map((seg, i) => (
-          <line
-            key={i}
-            x1={timeToX(seg.start)}
-            y1={STATUS_LINES[seg.status]}
-            x2={timeToX(seg.end)}
-            y2={STATUS_LINES[seg.status]}
-            stroke="black"
-            strokeWidth="2"
-          />
-        ))}
-      </svg>
-
-      <div className="text-sm mb-2">
-        <strong>Remarks:</strong>
-        <ul className="list-disc ml-4">
-          {remarks.map((r, i) => <li key={i}>{r}</li>)}
-        </ul>
-      </div>
-
-      <div className="mt-4 text-sm">
-        <strong>Signature:</strong> ___________________________
+    <div>
+      <h3>Trip Logsheet</h3>
+      <div ref={mapContainerRef} style={{ height: '400px', width: '100%' }} />
+      <div style={{ marginTop: '20px' }}>
+        <h4>Remarks</h4>
+        <p>{trip.remarks || 'No remarks recorded for this trip.'}</p>
+        <button onClick={handleExport}>Export Logsheet as PDF</button>
       </div>
     </div>
   );
-};
-
-export default TripLogsheet;
+}

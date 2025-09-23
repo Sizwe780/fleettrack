@@ -58,6 +58,8 @@ export default function TripForm({ userId, onTripCreated }) {
       cycle_used: cycleUsed,
       departure_time: departureTime,
       userId,
+      // Add a placeholder for remarks, to be filled out by the backend
+      remarks: 'No remarks recorded for this trip.',
     };
 
     try {
@@ -74,6 +76,7 @@ export default function TripForm({ userId, onTripCreated }) {
       const response = await axios.post(`${process.env.REACT_APP_API_URL}/api/trips`, tripData);
 
       setStatusMessage('Trip submitted successfully!');
+      // Assuming your backend returns the full trip object, including any new fields
       setSubmittedTrip(response.data);
       onTripCreated(response.data);
       navigate('/dashboard');
