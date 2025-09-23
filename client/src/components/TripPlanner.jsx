@@ -99,7 +99,6 @@ const TripPlanner = ({ userId, onTripCreated }) => {
         try {
             const newTripData = await FAKE_BACKEND_tripAnalysis(form, userId);
 
-            // ✅ FIX: The backend now returns a flattened array for dailyLogs, so this is safe
             const safeTripData = {
                 origin: newTripData.origin,
                 destination: newTripData.destination,
@@ -112,7 +111,7 @@ const TripPlanner = ({ userId, onTripCreated }) => {
                     profitability: newTripData.analysis?.profitability ?? null,
                     ifta: newTripData.analysis?.ifta ?? null,
                     remarks: newTripData.analysis?.remarks ?? '',
-                    dailyLogs: JSON.stringify(newTripData.analysis?.dailyLogs ?? []), // ✅ FIX: Serialize dailyLogs to a JSON string
+                    dailyLogs: JSON.stringify(newTripData.analysis?.dailyLogs ?? []),
                 },
             };
 
