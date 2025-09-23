@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
-import { callTripAnalysis } from '../utils/callTripAnalysis';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
-
-
-function TripForm() {
+const TripForm = ({ userId }) => {
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   const [date, setDate] = useState('');
@@ -13,22 +12,9 @@ function TripForm() {
   const [cycleUsed, setCycleUsed] = useState('');
   const [departureTime, setDepartureTime] = useState('');
 
-  // This effect gets the user's current location on component mount
-  useEffect(() => {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        setCurrentLocation(`${latitude},${longitude}`);
-      },
-      (err) => console.error('Geolocation error:', err)
-    );
-  }, []);
-
-  
-
   const handleSubmit = async (e) => {
     e.preventDefault();
-  
+
     const tripData = {
       origin,
       destination,
@@ -42,22 +28,30 @@ function TripForm() {
       fuelPrice: 3.89,
       otherCosts: 125
     };
-  
+
     try {
-      // Step 1: Get full trip analysis from Django
+      // Step 1: Get analysis from Django
       const analysisRes = await axios.post(`${process.env.REACT_APP_API_URL}/api/calculate-trip/`, tripData);
       const analysis = analysisRes.data;
-  
-      // Step 2: Save full trip to your backend or Firebase
+
+      // Step 2: Save full trip to Django
       const fullTrip = {
         ...tripData,
         analysis,
         createdAt: new Date().toISOString()
       };
-  
+
       await axios.post(`${process.env.REACT_APP_API_URL}/api/trips/`, fullTrip);
-  
-      // Step 3: Reset form
+
+      // ✅ Step 3: Mirror trip to Firestore
+      const tripId = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      await setDoc(doc(db, 'trips', tripId), {
+        ...fullTrip,
+        status: 'pending',
+        driver_uid: userId
+      });
+
+      // Step 4: Reset form
       setOrigin('');
       setDestination('');
       setDate('');
@@ -65,106 +59,85 @@ function TripForm() {
       setCurrentLocation('');
       setCycleUsed('');
       setDepartureTime('');
-  
-      alert('Trip submitted and analyzed successfully!');
+
+      alert('Trip submitted and synced successfully!');
     } catch (error) {
       console.error('Submission failed:', error.response?.data || error.message);
       alert('Failed to submit trip.');
     }
   };
-  
+
   return (
-    <div className="home-container">
-      <div className="form-container">
-        <h2 className="form-title">Trip Details Form</h2>
-        <form className="trip-form" onSubmit={handleSubmit}>
-          {/* Input fields */}
-          <div className="form-row">
-            <div className="form-group">
-              <label>Origin</label>
-              <input
-                type="text"
-                value={origin}
-                onChange={(e) => setOrigin(e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Destination</label>
-              <input
-                type="text"
-                value={destination}
-                onChange={(e) => setDestination(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label>Date</label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Departure Time</label>
-              <input
-                type="time"
-                value={departureTime}
-                onChange={(e) => setDepartureTime(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label>Driver Name</label>
-              <input
-                type="text"
-                value={driverName}
-                onChange={(e) => setDriverName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Cycle Used (Hrs)</label>
-              <input
-                type="number"
-                value={cycleUsed}
-                onChange={(e) => setCycleUsed(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group location-group">
-              <label>Current Location</label>
-              <input
-                type="text"
-                value={currentLocation}
-                onChange={(e) => setCurrentLocation(e.target.value)}
-                readOnly
-              />
-            </div>
-            <div className="form-group location-group">
-              <label>Location</label>
-              <div className={`location-indicator ${currentLocation ? 'active' : ''}`}></div>
-            </div>
-          </div>
-          <div className="form-row submit-row">
-            <button type="submit">Submit</button>
-          </div>
-        </form>
-      </div>
-      <div className="contact-footer">
-        <h3>Reach out... </h3>
-        sizwe.ngwenya78@gmail.com
-      </div>
-    </div>
+    <form onSubmit={handleSubmit} className="space-y-4 p-4 bg-white rounded-xl shadow-md max-w-xl mx-auto">
+      <h2 className="text-xl font-bold mb-2">Create New Trip</h2>
+
+      <input
+        type="text"
+        placeholder="Origin"
+        value={origin}
+        onChange={(e) => setOrigin(e.target.value)}
+        className="w-full border rounded-md px-3 py-2"
+        required
+      />
+
+      <input
+        type="text"
+        placeholder="Destination"
+        value={destination}
+        onChange={(e) => setDestination(e.target.value)}
+        className="w-full border rounded-md px-3 py-2"
+        required
+      />
+
+      <input
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        className="w-full border rounded-md px-3 py-2"
+        required
+      />
+
+      <input
+        type="text"
+        placeholder="Driver Name"
+        value={driverName}
+        onChange={(e) => setDriverName(e.target.value)}
+        className="w-full border rounded-md px-3 py-2"
+        required
+      />
+
+      <input
+        type="text"
+        placeholder="Current Location"
+        value={currentLocation}
+        onChange={(e) => setCurrentLocation(e.target.value)}
+        className="w-full border rounded-md px-3 py-2"
+      />
+
+      <input
+        type="number"
+        placeholder="Cycle Used"
+        value={cycleUsed}
+        onChange={(e) => setCycleUsed(e.target.value)}
+        className="w-full border rounded-md px-3 py-2"
+      />
+
+      <input
+        type="time"
+        placeholder="Departure Time"
+        value={departureTime}
+        onChange={(e) => setDepartureTime(e.target.value)}
+        className="w-full border rounded-md px-3 py-2"
+      />
+
+      <button
+        type="submit"
+        className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700"
+      >
+        Submit Trip
+      </button>
+    </form>
   );
-}
+};
 
 export default TripForm;
