@@ -5,7 +5,8 @@ import FAKE_BACKEND_tripAnalysis from '../utils/fakeBackend';
 import { getAuth } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 
-const TripPlanner = ({ onTripCreated }) => {
+// 💡 Accept appId as a prop here
+const TripPlanner = ({ onTripCreated, appId }) => {
   const [form, setForm] = useState({
     origin: 'Gqeberha, EC',
     destination: 'Cape Town, WC',
@@ -72,6 +73,7 @@ const TripPlanner = ({ onTripCreated }) => {
       };
 
       const cleanTripData = JSON.parse(JSON.stringify(safeTripData));
+      // 💡 Use the appId prop to access the correct path
       const docRef = await addDoc(collection(db, `apps/${appId}/trips`), cleanTripData);
       console.log('Trip added with ID:', docRef.id);
 

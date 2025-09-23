@@ -1,14 +1,14 @@
-//  ✅  Core & React
+// ✅  Core & React
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-//  ✅  Mapbox (react-map-gl@8.x requires subpath imports)
+// ✅  Mapbox (react-map-gl@8.x requires subpath imports)
 import { Map, Source, Layer, Marker } from 'react-map-gl/mapbox'; // or 'react-map-gl/maplibre' if using MapLibre
 import 'mapbox-gl/dist/mapbox-gl.css';
-//  ✅  Lucide Icons
+// ✅  Lucide Icons
 import {
   Truck, MapPin, DollarSign, UploadCloud, ShieldCheck, FileText, Plus,
   Home, ListChecks, Loader, Car, Star, Fuel, TrendingUp, BarChart2, Wrench, Trash2
 } from 'lucide-react';
-//  ✅  Firebase Modular SDK
+// ✅  Firebase Modular SDK
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
@@ -25,7 +25,7 @@ import {
   query,
   orderBy
 } from 'firebase/firestore';
-//  ✅  Internal Components & Pages
+// ✅  Internal Components & Pages
 import PlaceholderCard from './components/PlaceholderCard';
 import TripPlanner from './components/TripPlanner';
 import Dashboard from './pages/Dashboard';
@@ -33,7 +33,7 @@ import FleetAnalytics from './pages/FleetAnalytics';
 import TripCompare from './pages/TripCompare';
 import FleetHealth from './pages/FleetHealth';
 import TripReplay from './components/TripReplay';
-//  ✅  CONFIGURATION
+// ✅  CONFIGURATION
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAla1ZaxyeLc9WBDvKbAS8I9hUZnxIWxPg",
   authDomain: "fleettrack-84eb6.firebaseapp.com",
@@ -44,12 +44,12 @@ const FIREBASE_CONFIG = {
   measurementId: "G-MKSLF88L7C"
 };
 const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1Ijoic2l6d2U3OCIsImEiOiJjbWZncWkwZnIwNDBtMmtxd3BkeXVtYjZzIn0.niS9m5pCbK5Kv-_On2mTcg';
-//  ✅  FIREBASE INITIALIZATION (guarded against duplicate-app error)
+// ✅  FIREBASE INITIALIZATION (guarded against duplicate-app error)
 const app = getApps().length === 0 ? initializeApp(FIREBASE_CONFIG) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'fleet-track-app';
-//  ✅  MAIN APP COMPONENT
+// ✅  MAIN APP COMPONENT
 const App = () => {
   const [activeView, setActiveView] = useState('dashboard');
   const [userId, setUserId] = useState(null);
@@ -117,9 +117,11 @@ const App = () => {
     switch (activeView) {
       case 'planner':
         return (
+          // 💡 Pass the appId variable to the component here
           <TripPlanner
             userId={userId}
             onTripCreated={handleTripSelect}
+            appId={appId}
           />
         );
 
@@ -149,7 +151,7 @@ const App = () => {
           <Dashboard trip={selectedTrip} />
         ) : (
           <div className="p-6 text-gray-500">
-            No trip selected. Choose one from <strong>My Trips</strong>.
+            No trip selected. Choose one from **My Trips**.
           </div>
         );
       default:
@@ -172,7 +174,7 @@ const App = () => {
     </div>
   );
 };
-//  ✅  SIDEBAR COMPONENT
+// ✅  SIDEBAR COMPONENT
 const Sidebar = ({ activeView, setActiveView }) => (
   <aside className="bg-white px-4 py-6 shadow-lg md:min-h-screen md:w-64 border-r border-gray-200 -ml-4">
     <div className="flex items-center space-x-3 mb-10">
@@ -192,7 +194,7 @@ const Sidebar = ({ activeView, setActiveView }) => (
     </nav>
   </aside>
 );
-//  ✅  NAV BUTTON COMPONENT
+// ✅  NAV BUTTON COMPONENT
 const NavButton = ({ view, label, icon, activeView, onClick }) => (
   <button
     onClick={() => onClick(view)}
@@ -275,12 +277,12 @@ const MyTripsDashboard = ({ trips, onTripSelect }) => {
             </div>
             {trip.flagReason && (
               <div className="mt-3 text-sm text-red-600">
-                🚨  <strong>Flagged:</strong> {trip.flagReason}
+                🚨  **Flagged:** {trip.flagReason}
               </div>
             )}
             {trip.suggestedDriver_name && (
               <div className="mt-2 text-sm text-blue-600">
-                🧠  <strong>Suggested Driver:</strong> {trip.suggestedDriver_name}
+                🧠  **Suggested Driver:** {trip.suggestedDriver_name}
               </div>
             )}
             {trip.statusHistory && (
@@ -326,10 +328,10 @@ const TripList = ({ trips, onTripSelect }) => {
             onClick={() => onTripSelect(trip)}
           >
             <p>
-              <strong>From:</strong> {trip.origin}
+              **From:** {trip.origin}
             </p>
             <p>
-              <strong>To:</strong> {trip.destination}
+              **To:** {trip.destination}
             </p>
           </div>
         ))
@@ -341,7 +343,7 @@ const TripDetails = ({ trip }) => {
   if (!trip) {
     return (
       <div className="text-center p-10 text-gray-600">
-        Select a trip from <strong>"My Trips"</strong> to see the details.
+        Select a trip from **"My Trips"** to see the details.
       </div>
     );
   }
@@ -555,12 +557,12 @@ function analyzeTrip(routeData, currentCycleUsed) {
     { day: 1, status: 'On Duty', duration: 1 },
     { day: 1, status: 'Off Duty', duration: 10 }
   ];
-  //  🧠  Detect break compliance
+  // 🧠  Detect break compliance
   const breakTaken = logs.some(log => log.status === 'Off Duty' && log.duration >= 0.5);
   const offDutyHours = logs
     .filter(log => log.status === 'Off Duty')
     .reduce((sum, log) => sum + log.duration, 0);
-  //  📈  Fleet Health Scoring
+  // 📈  Fleet Health Scoring
   function scoreTrip() {
     let score = 100;
     if (durationHours > 11) score -= 20;
@@ -613,5 +615,5 @@ const getNextService = (vehicle) => {
     }
   });
   return nextService;
-}; //  ✅  This closes the function correctly
+}; // ✅  This closes the function correctly
 export default App;
