@@ -17,6 +17,9 @@ try {
     console.log("Firebase initialized successfully.");
 } catch (e) {
     console.error("Error initializing Firebase:", e);
+    if (e.code === 'auth/invalid-api-key') {
+        console.error("A Firebase configuration error has occurred: The provided API key is invalid. Please check your '__firebase_config' variable to ensure the 'apiKey' is correct.");
+    }
 }
 
 // FAKE BACKEND function (corrected for Firestore)
