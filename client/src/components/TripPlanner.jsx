@@ -18,7 +18,6 @@ const TripPlanner = ({ onTripCreated }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
-  const userId = getAuth().currentUser?.uid;
 
   const flattenDailyLogs = (logs = []) =>
     logs.map((log) => {
@@ -40,12 +39,14 @@ const TripPlanner = ({ onTripCreated }) => {
     setError(null);
 
     try {
-      if (!userId) {
+      const user = getAuth().currentUser;
+      if (!user) {
         setError('User not authenticated.');
         setIsLoading(false);
         return;
       }
 
+      const userId = user.uid;
       const newTripData = await FAKE_BACKEND_tripAnalysis(form, userId);
 
       const safeTripData = {
@@ -71,8 +72,8 @@ const TripPlanner = ({ onTripCreated }) => {
       };
 
       const cleanTripData = JSON.parse(JSON.stringify(safeTripData));
-      console.log('Submitting trip:', cleanTripData);
       const docRef = await addDoc(collection(db, 'trips'), cleanTripData);
+      console.log('Trip added with ID:', docRef.id);
 
       onTripCreated?.({ id: docRef.id, ...cleanTripData });
 
