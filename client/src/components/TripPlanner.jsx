@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { addDoc, collection } from 'firebase/firestore';
 import { db } from '../firebase';
 import FAKE_BACKEND_tripAnalysis from '../utils/fakeBackend';
+import { getAuth } from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
 
-const TripPlanner = ({ userId, onTripCreated }) => {
+const TripPlanner = ({ onTripCreated }) => {
   const [form, setForm] = useState({
     origin: 'Gqeberha, EC',
     destination: 'Cape Town, WC',
@@ -15,20 +17,19 @@ const TripPlanner = ({ userId, onTripCreated }) => {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const navigate = useNavigate();
+  const userId = getAuth().currentUser?.uid;
 
-  // 🔧 Deep-safe utility to flatten nested arrays inside dailyLogs
   const flattenDailyLogs = (logs = []) =>
     logs.map((log) => {
       const flatLog = {};
       for (const key in log) {
         const value = log[key];
-        if (Array.isArray(value)) {
-          flatLog[key] = value.map((item) =>
-            Array.isArray(item) ? JSON.stringify(item) : item
-          );
-        } else {
-          flatLog[key] = value;
-        }
+        flatLog[key] = Array.isArray(value)
+          ? value.map((item) =>
+              Array.isArray(item) ? JSON.stringify(item) : item
+            )
+          : value;
       }
       return flatLog;
     });
@@ -46,6 +47,7 @@ const TripPlanner = ({ userId, onTripCreated }) => {
         destination: newTripData.destination,
         cycleUsed: newTripData.cycleUsed,
         driver_name: newTripData.driver_name,
+        driver_uid: userId, // ✅ Needed for dashboard filtering
         date: newTripData.date,
         departureTime: newTripData.departureTime,
         routeData: {
@@ -58,12 +60,13 @@ const TripPlanner = ({ userId, onTripCreated }) => {
           remarks: newTripData.analysis?.remarks ?? '',
           dailyLogs: flattenDailyLogs(newTripData.analysis?.dailyLogs),
         },
+        status: 'pending',
+        healthScore: 100,
       };
 
-      const tripsPath = `apps/fleet-track-app/users/${userId}/trips`;
-      const docRef = await addDoc(collection(db, tripsPath), safeTripData);
-
-      onTripCreated({ id: docRef.id, ...safeTripData });
+      const docRef = await addDoc(collection(db, 'trips'), safeTripData);
+      onTripCreated?.({ id: docRef.id, ...safeTripData });
+      navigate('/dashboard'); // ✅ Redirect after submission
 
       setForm({
         origin: '',
