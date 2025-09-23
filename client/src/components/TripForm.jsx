@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { addDoc, collection } from 'firebase/firestore';
 import { db } from '../firebase';
-import validateTripPayload from '../utils/tripValidator'; // ✅ Patch 01
-import detectTripAnomalies from '../utils/tripAnomalyDetector'; // ✅ Patch 14
-import TripLogsheet from '../components/TripLogsheet'; // ✅ Patch 51
+import validateTripPayload from '../utils/tripValidator';
+import detectTripAnomalies from '../utils/tripAnomalyDetector';
+import TripLogsheet from './TripLogsheet';
 import { useNavigate } from 'react-router-dom';
 
-const TripForm = ({ userId, onTripCreated }) => {
+export default function TripForm({ userId, onTripCreated }) {
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   const [date, setDate] = useState('');
@@ -51,11 +51,9 @@ const TripForm = ({ userId, onTripCreated }) => {
     };
 
     try {
-      // Step 1: Get analysis from Django
       const analysisRes = await axios.post(`${process.env.REACT_APP_API_URL}/api/calculate-trip/`, tripData);
       const analysis = analysisRes.data;
 
-      // Step 2: Build enriched trip payload
       const fullTrip = {
         ...tripData,
         analysis,
@@ -92,7 +90,6 @@ const TripForm = ({ userId, onTripCreated }) => {
         stops: analysis.routeData?.stops ?? []
       };
 
-      // ✅ Patch 14: Detect anomalies
       const anomalies = detectTripAnomalies(enrichedTrip);
       if (anomalies.length > 0) {
         enrichedTrip.anomalies = anomalies;
@@ -100,7 +97,6 @@ const TripForm = ({ userId, onTripCreated }) => {
         enrichedTrip.flagReason = anomalies.join(', ');
       }
 
-      // ✅ Patch 01: Validate payload
       const { isValid, errors } = validateTripPayload(enrichedTrip);
       if (!isValid) {
         console.error('Trip validation failed:', errors);
@@ -109,15 +105,12 @@ const TripForm = ({ userId, onTripCreated }) => {
         return;
       }
 
-      // Step 3: Save to Django backend
       await axios.post(`${process.env.REACT_APP_API_URL}/api/trips/`, fullTrip);
 
-      // Step 4: Save to Firestore
       const path = `apps/fleet-track-app/users/${userId}/trips`;
       const docRef = await addDoc(collection(db, path), enrichedTrip);
       const tripId = docRef.id;
 
-      // ✅ Patch 16 + 55: Audit trail
       const auditTrail = collection(db, `${path}/${tripId}/auditTrail`);
       await addDoc(auditTrail, {
         action: 'Trip created via TripForm',
@@ -132,22 +125,19 @@ const TripForm = ({ userId, onTripCreated }) => {
         reason: 'TripForm → Django → Firestore → Logsheet → Replay'
       });
 
-      // ✅ Patch 19: Notify
       await axios.post(`${process.env.REACT_APP_API_URL}/api/notify/`, {
         title: 'New Trip Submitted',
         body: `${driverName} submitted a trip from ${origin} to ${destination}`,
         userId
       });
 
-      // ✅ Patch 51: Show logsheet
       setSubmittedTrip(enrichedTrip);
-
-      // ✅ Patch 52: Redirect to replay
-      navigate(`/trip/${tripId}`, { state: { trip: enrichedTrip } });
-
       if (onTripCreated) onTripCreated(enrichedTrip);
 
-      // Step 5: Reset form
+      setTimeout(() => {
+        navigate(`/trip/${tripId}`, { state: { trip: enrichedTrip } });
+      }, 300);
+
       setOrigin('');
       setDestination('');
       setDate('');
@@ -195,6 +185,4 @@ const TripForm = ({ userId, onTripCreated }) => {
       )}
     </div>
   );
-};
-
-export default TripForm;
+}
