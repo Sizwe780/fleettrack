@@ -4,8 +4,10 @@ import {
 } from 'recharts';
 
 const MonthlyHealthChart = ({ data }) => {
-  const lastMonth = data[data.length - 1];
-  const prevMonth = data[data.length - 2];
+  const safeData = Array.isArray(data) ? data : [];
+
+  const lastMonth = safeData[safeData.length - 1];
+  const prevMonth = safeData[safeData.length - 2];
   const delta = lastMonth && prevMonth
     ? lastMonth.averageScore - prevMonth.averageScore
     : null;
@@ -22,22 +24,26 @@ const MonthlyHealthChart = ({ data }) => {
         </p>
       )}
 
-      <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="month" />
-          <YAxis domain={[0, 100]} />
-          <Tooltip />
-          <Line
-            type="monotone"
-            dataKey="averageScore"
-            stroke="#10b981"
-            name="Health Score"
-            dot={{ r: 4 }}
-            activeDot={{ r: 6 }}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+      {safeData.length > 0 ? (
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={safeData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="month" />
+            <YAxis domain={[0, 100]} />
+            <Tooltip />
+            <Line
+              type="monotone"
+              dataKey="averageScore"
+              stroke="#10b981"
+              name="Health Score"
+              dot={{ r: 4 }}
+              activeDot={{ r: 6 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      ) : (
+        <p className="text-sm text-gray-500">No health data available for charting.</p>
+      )}
     </div>
   );
 };
