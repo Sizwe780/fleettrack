@@ -6,8 +6,9 @@ const { collection, addDoc } = require('firebase/firestore');
 router.post('/', async (req, res) => {
   try {
     const { driverId, startLocation, endLocation, cargoType, notes } = req.body;
-    const path = `apps/fleet-track-app/users/${driverId}/trips`;
+    const path = `apps/fleet-track-app/trips`;
     const docRef = await addDoc(collection(db, path), {
+      driverId,
       startLocation,
       endLocation,
       cargoType,
