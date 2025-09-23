@@ -71,6 +71,7 @@ const TripPlanner = ({ onTripCreated }) => {
       };
 
       const cleanTripData = JSON.parse(JSON.stringify(safeTripData));
+      console.log('Submitting trip:', cleanTripData); // ✅ Debug log
       const docRef = await addDoc(collection(db, 'trips'), cleanTripData);
 
       onTripCreated?.({ id: docRef.id, ...cleanTripData });
@@ -85,6 +86,7 @@ const TripPlanner = ({ onTripCreated }) => {
         departureTime: '',
       });
     } catch (err) {
+      console.error('Trip submission error:', err); // ✅ Debug log
       setError(err.message);
     } finally {
       setIsLoading(false);
