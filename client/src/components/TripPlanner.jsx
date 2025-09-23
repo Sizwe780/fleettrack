@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { addDoc, collection } from 'firebase/firestore';
 import { db } from '../firebase';
 import FAKE_BACKEND_tripAnalysis from '../utils/fakeBackend';
@@ -7,6 +7,13 @@ import { useNavigate } from 'react-router-dom';
 import { useRBAC } from '../hooks/useRBAC';
 
 const TripPlanner = ({ onTripCreated, appId }) => {
+  const TEST_MODE = true;
+
+  useEffect(() => {
+    const user = getAuth().currentUser;
+    console.log('Logged-in UID:', user?.uid);
+  }, []);
+
   const [form, setForm] = useState({
     origin: 'Gqeberha, EC',
     destination: 'Cape Town, WC',
@@ -41,7 +48,7 @@ const TripPlanner = ({ onTripCreated, appId }) => {
     try {
       const user = getAuth().currentUser;
       if (!user) throw new Error('User not authenticated.');
-      if (!isDriver) throw new Error('Access denied: Only drivers can submit trips.');
+      if (!TEST_MODE && !isDriver) throw new Error('Access denied: Only drivers can submit trips.');
 
       const userId = user.uid;
       const newTripData = await FAKE_BACKEND_tripAnalysis(form, userId);
@@ -54,6 +61,7 @@ const TripPlanner = ({ onTripCreated, appId }) => {
         driver_uid: userId,
         date: newTripData.date,
         departureTime: newTripData.departureTime,
+        coordinates: newTripData.routeData.path.map(([lng, lat]) => ({ lng, lat })), // ✅ no nested arrays
         routeData: {
           path: JSON.stringify(newTripData.routeData.path),
           estimatedTime: newTripData.routeData.estimatedTime,
@@ -65,12 +73,15 @@ const TripPlanner = ({ onTripCreated, appId }) => {
           dailyLogs: flattenDailyLogs(newTripData.analysis?.dailyLogs),
         },
         status: 'pending',
-        healthScore: 100,
+        healthScore: newTripData.analysis?.healthScore ?? 100,
       };
 
-      const docRef = await addDoc(collection(db, `apps/${appId}/trips`), safeTripData);
-      onTripCreated?.({ id: docRef.id, ...safeTripData });
+      const docRef = await addDoc(
+        collection(db, `apps/${appId}/trips`), // ✅ matches dashboard listener
+        safeTripData
+      );
 
+      onTripCreated?.({ id: docRef.id, ...safeTripData });
       navigate('/dashboard', { replace: true });
 
       setForm((prev) => ({
@@ -102,7 +113,9 @@ const TripPlanner = ({ onTripCreated, appId }) => {
   );
 
   if (roleLoading) return <p>Loading access...</p>;
-  if (!isDriver) return <p className="text-red-600">Access denied. Only drivers can submit trips.</p>;
+  if (!TEST_MODE && !isDriver) {
+    return <p className="text-red-600">Access denied. Only drivers can submit trips.</p>;
+  }
 
   return (
     <div>

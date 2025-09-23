@@ -10,7 +10,7 @@ const useUserRole = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        const userRef = doc(db, 'users', user.uid);
+        const userRef = doc(db, 'user', user.uid);
         const userSnap = await getDoc(userRef);
         if (userSnap.exists()) {
           setRole(userSnap.data().role || 'viewer'); // default fallback

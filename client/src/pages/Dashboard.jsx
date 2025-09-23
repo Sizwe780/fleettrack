@@ -160,7 +160,10 @@ const Dashboard = () => {
       origin: 'Gqeberha',
       destination: 'East London',
       date: new Date().toISOString(),
-      coordinates: [[-33.96, 25.61], [-33.97, 25.62]],
+      coordinates: [
+        { lat: -33.96, lng: 25.61 },
+        { lat: -33.97, lng: 25.62 }
+      ], // ✅ Firestore-friendly
       analysis: {
         profitability: { revenue: 1500, netProfit: 1200, distanceMiles: 180 },
         ifta: { fuelUsed: 45 }

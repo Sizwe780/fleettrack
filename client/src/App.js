@@ -1,4 +1,5 @@
 // ✅  Core & React
+import { query, where, orderBy} from 'firebase/firestore';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 // ✅  Mapbox (react-map-gl@8.x requires subpath imports)
 import { Map, Source, Layer, Marker } from 'react-map-gl/mapbox'; // or 'react-map-gl/maplibre' if using MapLibre
@@ -22,8 +23,6 @@ import {
   onSnapshot,
   collection,
   serverTimestamp,
-  query,
-  orderBy
 } from 'firebase/firestore';
 // ✅  Internal Components & Pages
 import PlaceholderCard from './components/PlaceholderCard';
@@ -78,6 +77,7 @@ const App = () => {
     if (!userId) return;
     const tripsQuery = query(
       collection(db, 'apps/fleet-track-app/trips'),
+      where('driver_uid', '==', userId),
       orderBy('timestamp', 'desc')
     );
     const unsubscribe = onSnapshot(
@@ -87,8 +87,8 @@ const App = () => {
         setIsLoading(false);
       },
       error => {
-        console.error('Snapshot error:', error);
-        setIsLoading(false); // Prevents infinite loading loop
+        console.error('Snapshot error:', error.message);
+        setIsLoading(false);
       }
     );
     return unsubscribe;
