@@ -15,8 +15,13 @@
       ]
     }
   ],
+  "rewrites": [
+    {
+      "source": "/firebase-messaging-sw.js",
+      "destination": "/firebase-messaging-sw.js"
+    }
+  ],
   "redirects": [],
-  "rewrites": [],
   "cleanUrls": true,
   "trailingSlash": false
 }
