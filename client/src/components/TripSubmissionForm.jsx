@@ -15,8 +15,8 @@ export default function TripSubmissionForm() {
   };
 
   const handleSubmit = async e => {
-    e.preventDefault();
-    const res = await fetch('/api/trips/submit', { // 💡 Change to the new route to avoid conflicts
+    e.preventDefault(); // 💡 This is the line that prevents the page reload!
+    const res = await fetch('/api/trips/submit', { 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form)
