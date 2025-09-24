@@ -1,0 +1,1 @@
+toast.success('Trip submitted, logsheet generated, route mapped, audit logged.');

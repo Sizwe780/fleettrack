@@ -72,15 +72,11 @@ self.addEventListener('push', event => {
   const body = data.body || 'You have a new fleet notification.';
 
   // 🧠 Log push payload to audit trail (if supported)
-  try {
-    fetch('/api/log-push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, body, timestamp: new Date().toISOString() })
-    });
-  } catch (err) {
-    console.warn('Push log failed:', err);
-  }
+  fetch('/api/log-push', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, body, timestamp: new Date().toISOString() })
+  }).catch(err => console.warn('Push log failed:', err));
 
   self.registration.showNotification(title, {
     body,

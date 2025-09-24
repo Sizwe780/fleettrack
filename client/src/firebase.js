@@ -1,29 +1,21 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { getMessaging, isSupported } from 'firebase/messaging';
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+import { getFirestore } from "firebase/firestore";
+import { getMessaging } from "firebase/messaging"; // ✅ Add this
 
 const firebaseConfig = {
-  apiKey: 'AIzaSyAla1ZaxyeLc9WBDvKbAS8I9hUZnxIWxPg',
-  authDomain: 'fleettrack-84eb6.firebaseapp.com',
-  projectId: 'fleettrack-84eb6',
-  storageBucket: 'fleettrack-84eb6.appspot.com',
-  messagingSenderId: '918797565578',
-  appId: '1:918797565578:web:34dfa9992cd5a4a3cbf773'
+  apiKey: "AIzaSyAla1ZaxyeLc9WBDvKbAS8I9hUZnxIWxPg",
+  authDomain: "fleettrack-84eb6.firebaseapp.com",
+  projectId: "fleettrack-84eb6",
+  storageBucket: "fleettrack-84eb6.firebasestorage.app",
+  messagingSenderId: "918797565578",
+  appId: "1:918797565578:web:8c8ee2b227057e21cbf773",
+  measurementId: "G-EQT2H5SQ4V"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+const db = getFirestore(app);
+const messaging = getMessaging(app); // ✅ Initialize messaging
 
-// Export services
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-
-// Messaging: must be initialized asynchronously
-let messaging = null;
-isSupported().then((supported) => {
-  if (supported) {
-    messaging = getMessaging(app);
-  }
-});
-export { messaging };
+export { db, analytics, messaging }; // ✅ Export it

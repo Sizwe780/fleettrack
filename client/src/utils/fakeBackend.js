@@ -23,6 +23,9 @@ const FAKE_BACKEND_tripAnalysis = async (form, userId) => {
     const fuelingRequired = distanceMiles >= 1000;
     const restRequired = drivingHours > 8;
   
+    // 🔧 Simulated arrival time
+    const arrivalTime = new Date(new Date(departureTime).getTime() + totalHours * 60 * 60 * 1000).toISOString();
+  
     // 🔧 Compliance remarks
     const remarks = [];
     if (fuelingRequired) remarks.push('Fueling required at least once during this trip.');
@@ -81,6 +84,7 @@ const FAKE_BACKEND_tripAnalysis = async (form, userId) => {
       driver_name,
       date,
       departureTime,
+      arrivalTime, // ✅ For SLA breach detection
       dailyLogs: logs,
       routeData: {
         path: routePath,
@@ -99,6 +103,11 @@ const FAKE_BACKEND_tripAnalysis = async (form, userId) => {
         dailyLogs: safeAnalysisLogs,
       },
       healthScore,
+      fuelRisk: fuelingRequired ? 0.85 : 0.4,      // ✅ For TripRiskDashboard
+      delayRisk: 0.6,                              // ✅ Simulated delay risk
+      fatigueRisk: restRequired ? 0.7 : 0.3,       // ✅ Simulated fatigue risk
+      suggestedDriver_name: restRequired ? 'Backup Driver A' : null, // ✅ Fatigue override
+      driverFCMToken: 'mocked-token-123',          // ✅ Push alert simulation
     };
   };
   

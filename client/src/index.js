@@ -1,17 +1,23 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom'; // ✅ Add this
-import './index.css';
 import App from './App';
-import reportWebVitals from './reportWebVitals';
+import './index.css';
+import { messaging } from './firebase'; // ✅ Import messaging
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(
+ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter> {/* ✅ Wrap App in router context */}
-      <App />
-    </BrowserRouter>
+    <App />
   </React.StrictMode>
 );
 
-reportWebVitals();
+// ✅ Register service worker (no useServiceWorker needed)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker
+    .register('/firebase-messaging-sw.js')
+    .then(() => {
+      console.log('Service Worker registered for Firebase Messaging');
+    })
+    .catch(err => {
+      console.error('Service Worker registration failed:', err);
+    });
+}

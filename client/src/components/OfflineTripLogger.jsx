@@ -1,100 +1,76 @@
 import React, { useState, useEffect } from 'react';
-import { getAuth } from 'firebase/auth';
-import { addDoc, collection } from 'firebase/firestore';
+import { setDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
-import FAKE_BACKEND_tripAnalysis from '../utils/fakeBackend';
 
-const OfflineTripLogger = ({ appId }) => {
-  const [form, setForm] = useState({
-    origin: '',
-    destination: '',
-    cycleUsed: '',
-    driver_name: '',
-    date: new Date().toISOString().split('T')[0],
-    departureTime: '',
+export default function OfflineTripLogger({ userId }) {
+  const [tripData, setTripData] = useState(() => {
+    const saved = localStorage.getItem('offlineTrip');
+    return saved ? JSON.parse(saved) : { origin: '', destination: '', notes: '' };
   });
-
-  const [status, setStatus] = useState(null);
-  const [offlineTrips, setOfflineTrips] = useState([]);
+  const [status, setStatus] = useState('idle');
 
   useEffect(() => {
-    const saved = localStorage.getItem('fleettrack_offline_trips');
-    if (saved) setOfflineTrips(JSON.parse(saved));
-  }, []);
+    localStorage.setItem('offlineTrip', JSON.stringify(tripData));
+  }, [tripData]);
 
-  const saveOffline = (trip) => {
-    const updated = [...offlineTrips, trip];
-    setOfflineTrips(updated);
-    localStorage.setItem('fleettrack_offline_trips', JSON.stringify(updated));
-  };
-
-  const syncTrips = async () => {
-    const user = getAuth().currentUser;
-    if (!user || offlineTrips.length === 0) return;
-
-    for (const trip of offlineTrips) {
-      const newTripData = await FAKE_BACKEND_tripAnalysis(trip, user.uid);
-      const safeTripData = {
-        ...newTripData,
-        driver_uid: user.uid,
-        createdAt: new Date(),
-      };
-      await addDoc(collection(db, `apps/${appId}/trips`), safeTripData);
-    }
-
-    localStorage.removeItem('fleettrack_offline_trips');
-    setOfflineTrips([]);
-    setStatus('synced');
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     setStatus('saving');
+    try {
+      const payload = {
+        ...tripData,
+        driver_uid: userId,
+        createdAt: new Date().toISOString(),
+        offline: true,
+        status: 'pending',
+        statusHistory: [{ status: 'pending', timestamp: new Date().toISOString() }],
+      };
 
-    const user = getAuth().currentUser;
-    const trip = {
-      ...form,
-      driver_name: user?.displayName ?? 'Offline Driver',
-    };
-
-    saveOffline(trip);
-    setForm({
-      origin: '',
-      destination: '',
-      cycleUsed: '',
-      driver_name: '',
-      date: new Date().toISOString().split('T')[0],
-      departureTime: '',
-    });
-    setStatus('saved');
+      const id = `offline-${Date.now()}`;
+      await setDoc(doc(db, 'apps/fleet-track-app/trips', id), payload);
+      localStorage.removeItem('offlineTrip');
+      setTripData({ origin: '', destination: '', notes: '' });
+      setStatus('success');
+    } catch (err) {
+      console.error('OfflineTripLogger error:', err.message);
+      setStatus('error');
+    }
   };
 
   return (
-    <div className="border rounded-xl p-4 bg-white shadow-md mt-6">
-      <h2 className="text-lg font-bold mb-2">📴 Offline Trip Logger</h2>
-      <form onSubmit={handleSubmit} className="space-y-4 text-sm">
-        <input placeholder="Origin" value={form.origin} onChange={(e) => setForm({ ...form, origin: e.target.value })} className="w-full border rounded px-3 py-2" />
-        <input placeholder="Destination" value={form.destination} onChange={(e) => setForm({ ...form, destination: e.target.value })} className="w-full border rounded px-3 py-2" />
-        <input placeholder="Cycle Used (hrs)" value={form.cycleUsed} onChange={(e) => setForm({ ...form, cycleUsed: e.target.value })} className="w-full border rounded px-3 py-2" />
-        <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="w-full border rounded px-3 py-2" />
-        <input type="time" value={form.departureTime} onChange={(e) => setForm({ ...form, departureTime: e.target.value })} className="w-full border rounded px-3 py-2" />
-        <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-          Save Trip Offline
-        </button>
-        {status === 'saved' && <p className="text-green-600 mt-2">Trip saved offline.</p>}
-        {status === 'synced' && <p className="text-blue-600 mt-2">Offline trips synced.</p>}
-      </form>
+    <div className="max-w-xl mx-auto mt-10 p-6 bg-white rounded shadow text-sm">
+      <h2 className="text-xl font-bold mb-4">📴 Offline Trip Logger</h2>
 
-      {offlineTrips.length > 0 && (
-        <div className="mt-4 text-sm">
-          <p><strong>Offline Trips:</strong> {offlineTrips.length}</p>
-          <button onClick={syncTrips} className="mt-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-            Sync to Cloud
-          </button>
-        </div>
-      )}
+      <input
+        type="text"
+        placeholder="Origin"
+        value={tripData.origin}
+        onChange={e => setTripData({ ...tripData, origin: e.target.value })}
+        className="w-full mb-2 p-2 border rounded"
+      />
+      <input
+        type="text"
+        placeholder="Destination"
+        value={tripData.destination}
+        onChange={e => setTripData({ ...tripData, destination: e.target.value })}
+        className="w-full mb-2 p-2 border rounded"
+      />
+      <textarea
+        placeholder="Trip Notes"
+        value={tripData.notes}
+        onChange={e => setTripData({ ...tripData, notes: e.target.value })}
+        className="w-full mb-4 p-2 border rounded"
+      />
+
+      <button
+        onClick={handleSubmit}
+        className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700"
+      >
+        Submit Offline Trip
+      </button>
+
+      {status === 'saving' && <p className="mt-2 text-xs text-gray-500">Saving trip...</p>}
+      {status === 'success' && <p className="mt-2 text-xs text-green-600">Trip saved and synced!</p>}
+      {status === 'error' && <p className="mt-2 text-xs text-red-600">Error saving trip.</p>}
     </div>
   );
-};
-
-export default OfflineTripLogger;
+}

@@ -1,40 +1,77 @@
-import React from 'react';
-import { MapContainer, TileLayer, Polyline, Marker, Popup } from 'react-leaflet';
+import React, { useEffect, useState } from 'react';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-const TripReplayWithStops = ({ trip }) => {
-  const coordinates = trip?.coordinates || [];
-  const hasPath = Array.isArray(coordinates) && coordinates.length > 0;
-  const mapCenter = hasPath ? [coordinates[0].lat, coordinates[0].lng] : [-33.9608, 25.6022]; // Gqeberha fallback
+export default function TripReplayWithStops({ trip }) {
+  const [map, setMap] = useState(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [replaySpeed, setReplaySpeed] = useState(1000); // ms per step
+
+  useEffect(() => {
+    if (!trip.coordinates || trip.coordinates.length === 0) return;
+
+    const mapInstance = L.map('trip-replay-map').setView(trip.coordinates[0], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+    }).addTo(mapInstance);
+
+    const path = L.polyline(trip.coordinates, { color: 'blue' }).addTo(mapInstance);
+    mapInstance.fitBounds(path.getBounds());
+
+    const marker = L.marker(trip.coordinates[0]).addTo(mapInstance);
+    setMap({ instance: mapInstance, marker });
+
+    return () => mapInstance.remove();
+  }, [trip.coordinates]);
+
+  useEffect(() => {
+    if (!map || !trip.coordinates || trip.coordinates.length === 0) return;
+
+    const interval = setInterval(() => {
+      setCurrentIndex(prev => {
+        const next = prev + 1;
+        if (next >= trip.coordinates.length) {
+          clearInterval(interval);
+          return prev;
+        }
+        map.marker.setLatLng(trip.coordinates[next]);
+        return next;
+      });
+    }, replaySpeed);
+
+    return () => clearInterval(interval);
+  }, [map, replaySpeed, trip.coordinates]);
+
+  const stops = trip.analysis?.stops || [];
 
   return (
-    <div className="mt-4 space-y-4">
-      <MapContainer center={mapCenter} zoom={6} style={{ height: '400px', width: '100%' }}>
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+    <div className="mt-4">
+      <h3 className="text-sm font-semibold mb-2">▶️ Trip Replay</h3>
+      <div id="trip-replay-map" className="h-64 rounded shadow mb-4" />
 
-        {hasPath && (
-          <>
-            <Polyline
-              positions={coordinates.map(coord => [coord.lat, coord.lng])}
-              color="purple"
-            />
-            <Marker position={[coordinates[0].lat, coordinates[0].lng]}>
-              <Popup>Origin: {trip.origin}</Popup>
-            </Marker>
-            <Marker position={[coordinates[coordinates.length - 1].lat, coordinates[coordinates.length - 1].lng]}>
-              <Popup>Destination: {trip.destination}</Popup>
-            </Marker>
-          </>
-        )}
-      </MapContainer>
+      <label className="text-xs text-gray-600">Replay Speed (ms):</label>
+      <input
+        type="range"
+        min="200"
+        max="2000"
+        step="100"
+        value={replaySpeed}
+        onChange={e => setReplaySpeed(Number(e.target.value))}
+        className="w-full mb-4"
+      />
 
-      {/* 🧪 Diagnostic Overlay */}
-      <details className="bg-gray-50 p-3 rounded text-xs">
-        <summary className="cursor-pointer font-semibold text-gray-700">🛰️ Replay Payload Debug</summary>
-        <pre className="overflow-x-auto mt-2">{JSON.stringify(coordinates, null, 2)}</pre>
-      </details>
+      {stops.length > 0 && (
+        <div className="text-sm text-gray-700">
+          <p className="font-semibold mb-1">🛑 Detected Stops:</p>
+          <ul className="list-disc ml-4">
+            {stops.map((stop, i) => (
+              <li key={i}>
+                {stop.location} @ {new Date(stop.timestamp).toLocaleString()}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
-};
-
-export default TripReplayWithStops;
+}

@@ -1,56 +1,67 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 
-const DriverLeaderboard = ({ trips }) => {
-  const driverStats = {};
+export default function DriverLeaderboard() {
+  const [drivers, setDrivers] = useState([]);
 
-  trips.forEach((trip) => {
-    const uid = trip.driver_uid;
-    if (!driverStats[uid]) {
-      driverStats[uid] = {
-        name: trip.driver_name,
-        trips: 0,
-        totalScore: 0,
-        totalProfit: 0,
-      };
-    }
-    driverStats[uid].trips += 1;
-    driverStats[uid].totalScore += trip.healthScore ?? 0;
-    driverStats[uid].totalProfit += trip.analysis?.profitability?.netProfit ?? 0;
-  });
+  useEffect(() => {
+    const path = `apps/fleet-track-app/trips`;
+    const unsubscribe = onSnapshot(
+      collection(db, path),
+      (snapshot) => {
+        const trips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const grouped = {};
 
-  const ranked = Object.values(driverStats)
-    .map((d) => ({
-      ...d,
-      avgScore: Math.round(d.totalScore / d.trips),
-      avgProfit: Math.round(d.totalProfit / d.trips),
-    }))
-    .sort((a, b) => b.avgScore - a.avgScore);
+        trips.forEach(trip => {
+          const name = trip.driver_name ?? 'Unknown';
+          if (!grouped[name]) {
+            grouped[name] = { name, trips: 0, score: 0, profit: 0 };
+          }
+          grouped[name].trips += 1;
+          grouped[name].score += trip.analysis?.healthScore ?? 0;
+          grouped[name].profit += trip.analysis?.profitability?.netProfit ?? 0;
+        });
+
+        const ranked = Object.values(grouped).map(d => ({
+          ...d,
+          avgScore: Math.round(d.score / d.trips),
+          avgProfit: Math.round(d.profit / d.trips),
+        })).sort((a, b) => b.avgScore - a.avgScore);
+
+        setDrivers(ranked);
+      },
+      (error) => {
+        console.error('Leaderboard error:', error.message);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
 
   return (
-    <div className="mt-10">
+    <div className="mt-10 max-w-3xl mx-auto text-sm">
       <h2 className="text-xl font-bold mb-4">🏆 Driver Leaderboard</h2>
-      <table className="w-full text-sm border">
-        <thead className="bg-gray-100">
-          <tr>
+      <table className="w-full border text-xs">
+        <thead>
+          <tr className="bg-gray-100">
             <th className="p-2 text-left">Driver</th>
-            <th className="p-2">Trips</th>
-            <th className="p-2">Avg Score</th>
-            <th className="p-2">Avg Profit</th>
+            <th className="p-2 text-left">Trips</th>
+            <th className="p-2 text-left">Avg Score</th>
+            <th className="p-2 text-left">Avg Profit</th>
           </tr>
         </thead>
         <tbody>
-          {ranked.map((d, i) => (
-            <tr key={i} className="border-t">
+          {drivers.map((d, i) => (
+            <tr key={i} className={i === 0 ? 'bg-yellow-50 font-semibold' : ''}>
               <td className="p-2">{d.name}</td>
-              <td className="p-2 text-center">{d.trips}</td>
-              <td className="p-2 text-center">{d.avgScore}</td>
-              <td className="p-2 text-center">R{d.avgProfit}</td>
+              <td className="p-2">{d.trips}</td>
+              <td className="p-2">{d.avgScore}/100</td>
+              <td className="p-2">R{d.avgProfit}</td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
   );
-};
-
-export default DriverLeaderboard;
+}

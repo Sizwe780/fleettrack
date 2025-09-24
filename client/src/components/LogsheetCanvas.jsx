@@ -1,11 +1,13 @@
-// src/components/LogsheetCanvas.jsx
 import React from 'react';
 
 const blockColors = {
   driving: '#4ade80',     // green
   rest: '#facc15',        // yellow
   pickup: '#60a5fa',      // blue
-  dropoff: '#f87171'      // red
+  dropoff: '#f87171',     // red
+  fuel: '#a855f7',        // purple
+  maintenance: '#94a3b8', // slate
+  custom: '#d4d4d4'       // neutral
 };
 
 export default function LogsheetCanvas({ logs }) {
@@ -16,10 +18,14 @@ export default function LogsheetCanvas({ logs }) {
           <h4 className="text-sm font-semibold mb-2">📅 {log.date}</h4>
           <svg width="100%" height="60" viewBox="0 0 960 60">
             {log.blocks.map((block, j) => {
-              const startHour = parseInt(block.start.split(':')[0]) + parseInt(block.start.split(':')[1]) / 60;
-              const endHour = parseInt(block.end.split(':')[0]) + parseInt(block.end.split(':')[1]) / 60;
+              const [startH, startM] = block.start.split(':').map(Number);
+              const [endH, endM] = block.end.split(':').map(Number);
+              const startHour = startH + startM / 60;
+              const endHour = endH + endM / 60;
               const x = (startHour / 24) * 960;
               const width = ((endHour - startHour) / 24) * 960;
+              const color = blockColors[block.type] || blockColors.custom;
+
               return (
                 <rect
                   key={j}
@@ -27,7 +33,7 @@ export default function LogsheetCanvas({ logs }) {
                   y={10}
                   width={width}
                   height={40}
-                  fill={blockColors[block.type] || '#ccc'}
+                  fill={color}
                 >
                   <title>{block.type}: {block.start}–{block.end}</title>
                 </rect>

@@ -1,13 +1,20 @@
 import React from 'react';
 
-const SyncStatusTracker = ({ pendingCount }) => {
-  if (pendingCount === 0) return null;
+export default function SyncStatusTracker({ trip }) {
+  if (!trip) return null;
+
+  const isOffline = trip.offline === true;
+  const syncStatus = trip.syncedAt
+    ? `✅ Synced @ ${new Date(trip.syncedAt).toLocaleString()}`
+    : isOffline
+    ? '📴 Offline trip — not yet synced'
+    : '⏳ Sync pending';
+
+  const statusColor = trip.syncedAt ? 'text-green-600' : isOffline ? 'text-red-600' : 'text-yellow-600';
 
   return (
-    <div className="fixed bottom-4 right-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 rounded shadow-md text-sm z-50">
-      ⏳ {pendingCount} trip{pendingCount > 1 ? 's' : ''} pending sync...
+    <div className={`mt-2 text-sm ${statusColor}`}>
+      <strong>Sync Status:</strong> {syncStatus}
     </div>
   );
-};
-
-export default SyncStatusTracker;
+}

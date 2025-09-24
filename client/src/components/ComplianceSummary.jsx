@@ -1,7 +1,10 @@
 import React from 'react';
 
 const ComplianceSummary = ({ trip }) => {
-  const remarks = trip.analysis?.remarks?.split('.').map(r => r.trim()).filter(Boolean) ?? [];
+  const remarks = Array.isArray(trip.analysis?.remarks)
+    ? trip.analysis.remarks
+    : [];
+
   const cycleUsed = parseFloat(trip.cycleUsed ?? '0');
   const violations = [];
 
@@ -15,8 +18,11 @@ const ComplianceSummary = ({ trip }) => {
   }
 
   // 🔍 Flag driving time violations
-  const drivingSegments = trip.dailyLogs?.filter(log => log.status === 'Driving') ?? [];
-  const totalDriving = drivingSegments.reduce((sum, seg) => sum + (seg.duration ?? 0), 0);
+  const drivingBlocks = trip.analysis?.dailyLogs?.flatMap(log =>
+    log.blocks?.filter(b => b.type === 'driving')
+  ) ?? [];
+
+  const totalDriving = drivingBlocks.reduce((sum, b) => sum + (b.durationHours ?? 0), 0);
   if (totalDriving > 11) {
     violations.push(`🛑 Driving exceeded 11 hrs: ${totalDriving.toFixed(1)} hrs`);
   } else {
@@ -56,6 +62,12 @@ const ComplianceSummary = ({ trip }) => {
           <li key={i}>{v}</li>
         ))}
       </ul>
+
+      {/* 🧪 Diagnostic Overlay */}
+      <details className="bg-gray-50 p-2 rounded text-xs mt-3">
+        <summary className="cursor-pointer font-semibold text-gray-700">📋 Compliance Debug</summary>
+        <pre className="overflow-x-auto mt-1">{JSON.stringify({ cycleUsed, remarks, drivingBlocks }, null, 2)}</pre>
+      </details>
     </div>
   );
 };

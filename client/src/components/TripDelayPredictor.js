@@ -1,11 +1,12 @@
-const TripDelayPredictor = (trip) => {
-    const plannedDeparture = new Date(`${trip.date}T${trip.departureTime}`);
-    const actualDeparture = new Date(trip.actualDeparture ?? plannedDeparture);
-    const delayMinutes = (actualDeparture - plannedDeparture) / (1000 * 60);
+export const predictDelayRisk = ({ departureTime, arrivalTime, slaLimitHours }) => {
+    const start = new Date(departureTime);
+    const end = new Date(arrivalTime);
+    const durationHours = (end - start) / (1000 * 60 * 60);
+    const breached = durationHours > slaLimitHours;
   
-    const delayRisk = delayMinutes > 30 ? 'High' : delayMinutes > 10 ? 'Moderate' : 'Low';
-  
-    return { delayMinutes, delayRisk };
+    return {
+      breached,
+      durationHours: Math.round(durationHours * 10) / 10,
+      riskLevel: breached ? 'high' : durationHours > slaLimitHours * 0.9 ? 'medium' : 'low',
+    };
   };
-  
-  export default TripDelayPredictor;

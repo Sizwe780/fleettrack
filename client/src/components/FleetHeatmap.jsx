@@ -1,75 +1,48 @@
 import React, { useEffect, useRef } from 'react';
-import mapboxgl from 'mapbox-gl';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import 'leaflet.heat';
 
-mapboxgl.accessToken = 'pk.eyJ1Ijoic2l6d2U3OCIsImEiOiJjbWZncWkwZnIwNDBtMmtxd3BkeXVtYjZzIn0.niS9m5pCbK5Kv-_On2mTcg';
-
-const FleetHeatmap = ({ trips }) => {
-  const mapContainer = useRef(null);
-  const map = useRef(null);
+export default function FleetHeatmap({ trips }) {
+  const mapRef = useRef(null);
 
   useEffect(() => {
-    if (!map.current && mapContainer.current) {
-      map.current = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/light-v10',
-        center: [25.6, -33.96], // Gqeberha default
-        zoom: 5,
-      });
+    if (!trips || trips.length === 0) return;
+
+    // Clean up previous map instance
+    if (mapRef.current) {
+      mapRef.current.remove();
+      mapRef.current = null;
     }
 
-    if (map.current && trips.length > 0) {
-      const coordinates = trips.flatMap((trip) => trip.coordinates ?? []);
-      const geojson = {
-        type: 'FeatureCollection',
-        features: coordinates.map((coord) => ({
-          type: 'Feature',
-          geometry: {
-            type: 'Point',
-            coordinates: [coord.lng, coord.lat],
-          },
-        })),
-      };
+    const map = L.map('fleet-heatmap').setView([-33.96, 25.6], 10); // Nelson Mandela Bay
+    mapRef.current = map;
 
-      if (map.current.getSource('fleet-heat')) {
-        map.current.getSource('fleet-heat').setData(geojson);
-      } else {
-        map.current.addSource('fleet-heat', {
-          type: 'geojson',
-          data: geojson,
-        });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+    }).addTo(map);
 
-        map.current.addLayer({
-          id: 'fleet-heat-layer',
-          type: 'heatmap',
-          source: 'fleet-heat',
-          paint: {
-            'heatmap-weight': 1,
-            'heatmap-intensity': 1,
-            'heatmap-radius': 20,
-            'heatmap-opacity': 0.6,
-            'heatmap-color': [
-              'interpolate',
-              ['linear'],
-              ['heatmap-density'],
-              0, 'rgba(0,0,255,0)',
-              0.2, 'blue',
-              0.4, 'lime',
-              0.6, 'yellow',
-              0.8, 'orange',
-              1, 'red',
-            ],
-          },
-        });
+    const heatPoints = trips
+      .flatMap(t => Array.isArray(t.coordinates) ? t.coordinates : [])
+      .filter(coord => Array.isArray(coord) && coord.length === 2)
+      .map(([lat, lng]) => [lat, lng, 0.5]); // lat, lng, intensity
+
+    if (heatPoints.length > 0) {
+      L.heatLayer(heatPoints, { radius: 25 }).addTo(map);
+    }
+
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
       }
-    }
+    };
   }, [trips]);
 
   return (
-    <div className="mt-8">
-      <h2 className="text-xl font-bold mb-2">🔥 Fleet Heatmap</h2>
-      <div ref={mapContainer} className="w-full h-[500px] rounded-xl shadow-md border" />
+    <div className="mt-10">
+      <h2 className="text-xl font-bold mb-4">🔥 Fleet Heatmap</h2>
+      <div id="fleet-heatmap" className="h-96 w-full rounded shadow" />
     </div>
   );
-};
-
-export default FleetHeatmap;
+}

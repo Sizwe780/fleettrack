@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import TripDashboard from '../components/TripDashboard';
 import ExportButton from '../components/ExportButton';
 import SidebarLayout from '../components/SidebarLayout';
@@ -18,16 +19,15 @@ import { db, messaging } from '../firebase';
 import { getToken } from 'firebase/messaging';
 import getOptimalRoute from '../utils/routeOptimizer';
 import evaluateTripRisk from '../utils/tripFlagger';
+import FleetComplianceSuite from '../components/FleetComplianceSuite';
 
 const Dashboard = () => {
+  const location = useLocation();
+  const newTripId = location.state?.newTripId || null;
+
   const [trips, setTrips] = useState([]);
   const [role, setRole] = useState(null);
   const [userId, setUserId] = useState(null);
-  const [driverFilter, setDriverFilter] = useState('');
-  const [minProfit, setMinProfit] = useState(0);
-  const [maxFuel, setMaxFuel] = useState(9999);
-  const [sortBy, setSortBy] = useState('date');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [showInstallButton, setShowInstallButton] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -85,15 +85,15 @@ const Dashboard = () => {
               );
 
           unsubscribeTrips = onSnapshot(tripsRef, (snapshot) => {
-            console.log('Trips snapshot received:', snapshot.docs.length);
-            snapshot.docs.forEach(doc => {
-              const data = doc.data();
-              console.log('Trip:', data.origin, '→', data.destination, '| Status:', data.status);
-            });
-
             const allTrips = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setTrips(allTrips);
             setLoading(false);
+
+            if (newTripId) {
+              setTimeout(() => {
+                document.getElementById(`trip-${newTripId}`)?.scrollIntoView({ behavior: 'smooth' });
+              }, 300);
+            }
           }, (error) => {
             console.error('Snapshot listener error:', error.message);
             setNoSnap(true);
@@ -186,7 +186,7 @@ const Dashboard = () => {
     }
   };
 
-  const filteredTrips = trips; // ✅ temporarily bypass filters
+  const filteredTrips = trips;
 
   return (
     <SidebarLayout>
@@ -197,21 +197,30 @@ const Dashboard = () => {
         ) : (
           <>
             {filteredTrips.map(trip => {
-              console.log('Rendering trip card for:', trip.origin, '→', trip.destination);
               const routeSuggestion = getOptimalRoute(trips, trip.origin, trip.destination);
               return (
-                <TripDashboard
-                  key={trip.id}
-                  trip={trip}
-                  onComplete={handleCompleteTrip}
-                  isOffline={!navigator.onLine}
-                  isSelected={false}
-                  onSelect={() => {}}
-                  routeSuggestion={routeSuggestion}
-                />
+                <div key={trip.id} id={`trip-${trip.id}`}>
+                  <TripDashboard
+                    trip={trip}
+                    onComplete={handleCompleteTrip}
+                    isOffline={!navigator.onLine}
+                    isSelected={false}
+                    onSelect={() => {}}
+                    routeSuggestion={routeSuggestion}
+                  />
+                </div>
               );
             })}
+            <FleetComplianceSuite trips={filteredTrips} contracts={[{ id: 'contract-001', slaHours: 4 }]} />
           </>
+        )}
+        {showInstallButton && (
+          <button
+            onClick={handleInstallClick}
+            className="fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded shadow"
+          >
+            📲 Install FleetTrack
+          </button>
         )}
       </div>
     </SidebarLayout>

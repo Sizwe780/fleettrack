@@ -6,14 +6,19 @@ const ChartComponent = ({ data }) => {
   const chartInstance = useRef(null);
 
   useEffect(() => {
+    // ✅ Guard against null data or empty datasets
+    if (!data || !data.datasets || data.datasets.length === 0) return;
+
+    // ✅ Destroy previous chart instance
     if (chartInstance.current) {
       chartInstance.current.destroy();
     }
 
-    if (chartContainer && chartContainer.current) {
+    // ✅ Create new chart if canvas is ready
+    if (chartContainer.current) {
       chartInstance.current = new Chart(chartContainer.current, {
         type: 'line',
-        data: data,
+        data,
         options: {
           responsive: true,
           maintainAspectRatio: false,
@@ -21,6 +26,7 @@ const ChartComponent = ({ data }) => {
       });
     }
 
+    // ✅ Cleanup on unmount
     return () => {
       if (chartInstance.current) {
         chartInstance.current.destroy();
@@ -28,7 +34,11 @@ const ChartComponent = ({ data }) => {
     };
   }, [data]);
 
-  return <canvas ref={chartContainer} />;
+  return (
+    <div style={{ position: 'relative', height: '300px' }}>
+      <canvas ref={chartContainer} />
+    </div>
+  );
 };
 
 export default ChartComponent;

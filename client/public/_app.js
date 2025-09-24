@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { messaging } from '../src/firebase';
 import { getToken } from 'firebase/messaging';
 import '../styles/globals.css';
+import 'leaflet/dist/leaflet.css';
 
 function MyApp({ Component, pageProps }) {
   useEffect(() => {

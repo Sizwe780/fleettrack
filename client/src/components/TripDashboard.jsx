@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 
-// ✅ Core trip modules
+// Core modules
 import TripReplayWithStops from './TripReplayWithStops';
 import TripStatusManager from './TripStatusManager';
 import TripStatusBadge from './TripStatusBadge';
@@ -15,9 +15,9 @@ import AuditTrailViewer from './AuditTrailViewer';
 import TripMap from './TripMap';
 import LogsheetCanvas from './LogsheetCanvas';
 
-// ✅ Fixed local components
-import FleetTrackExportConsole from './FleetTrackExportConsole';
+// FleetTrack X+ modules
 import TripExportPreview from './TripExportPreview';
+import TripExportSignatureBlock from './TripExportSignatureBlock';
 import DriverLeaderboard from './DriverLeaderboard';
 import FleetHeatmap from './FleetHeatmap';
 import TripClusterMap from './TripClusterMap';
@@ -25,12 +25,6 @@ import MaintenanceTracker from './MaintenanceTracker';
 import OfflineTripLogger from './OfflineTripLogger';
 import SyncStatusTracker from './SyncStatusTracker';
 import NotificationCenter from './NotificationCenter';
-import ExportButton from './ExportButton';
-import BatchExportPanel from './BatchExportPanel';
-import TripExportSignatureBlock from './TripExportSignatureBlock';
-import AdvancedRBACEditor from './AdvancedRBACEditor';
-import FirestoreRuleVisualizer from './FirestoreRuleVisualizer';
-import RBACValidator from './RBACValidator';
 
 export default function TripDashboard({ userId }) {
   const [trips, setTrips] = useState([]);
@@ -73,7 +67,6 @@ export default function TripDashboard({ userId }) {
     <div className="max-w-6xl mx-auto mt-10 space-y-8">
       <h2 className="text-2xl font-bold">🚚 Fleet Intelligence Console</h2>
 
-      {/* Fleet Health Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-6">
         <div className="bg-green-50 p-3 rounded">
           <p className="font-semibold">Avg Fleet Score</p>
@@ -93,21 +86,13 @@ export default function TripDashboard({ userId }) {
         </div>
       </div>
 
-      {/* Compliance Export */}
-      <button
-        onClick={() => console.log('Exporting audit logs...')}
-        className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900"
-      >
-        🧾 Export Compliance Logs
-      </button>
-
-      {/* Trip Cards */}
       {trips.length === 0 ? (
         <p className="text-sm text-gray-500 mt-4">No trips found. Submit one to get started.</p>
       ) : (
         trips.map(trip => (
           <div
             key={trip.id}
+            id={`trip-${trip.id}`}
             className={`p-4 rounded-xl shadow-md border ${
               trip.status === 'critical' ? 'border-red-500 bg-red-50' : 'bg-white'
             }`}
@@ -122,67 +107,21 @@ export default function TripDashboard({ userId }) {
             <TripStatusManager trip={trip} onStatusUpdate={(id, status) => console.log('Status updated:', id, status)} />
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <p className="font-semibold">Health Score</p>
-                <p>{trip.analysis?.healthScore ?? trip.healthScore}/100</p>
-              </div>
-              <div>
-                <p className="font-semibold">Status</p>
-                <p>{trip.status}</p>
-              </div>
-              <div>
-                <p className="font-semibold">Profit</p>
-                <p>R{trip.analysis?.profitability?.netProfit ?? '—'}</p>
-              </div>
-              <div>
-                <p className="font-semibold">Fuel Used</p>
-                <p>{trip.analysis?.ifta?.fuelUsed ?? '—'} L</p>
-              </div>
+              <div><p className="font-semibold">Health Score</p><p>{trip.analysis?.healthScore ?? trip.healthScore}/100</p></div>
+              <div><p className="font-semibold">Status</p><p>{trip.status}</p></div>
+              <div><p className="font-semibold">Profit</p><p>R{trip.analysis?.profitability?.netProfit ?? '—'}</p></div>
+              <div><p className="font-semibold">Fuel Used</p><p>{trip.analysis?.ifta?.fuelUsed ?? '—'} L</p></div>
             </div>
 
-            {trip.currentLocation && (
-              <div className="mt-2 text-sm text-gray-600">
-                📍 <strong>Current Location:</strong> {trip.currentLocation}
-              </div>
-            )}
-
-            {trip.departureTime && (
-              <div className="mt-1 text-sm text-gray-600">
-                🕒 <strong>Departure Time:</strong> {trip.departureTime}
-              </div>
-            )}
-
-            {Array.isArray(trip.analysis?.remarks) && trip.analysis.remarks.length > 0 && (
-              <div className="mt-2 text-sm text-gray-700">
-                🧾 <strong>Remarks:</strong>
-                <ul className="list-disc ml-4">
-                  {trip.analysis.remarks.map((r, i) => (
-                    <li key={i}>{r}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {trip.flagReason && (
-              <div className="mt-3 text-sm text-red-600">
-                🚨 <strong>Flagged:</strong> {trip.flagReason}
-              </div>
-            )}
-
-            {trip.suggestedDriver_name && (
-              <div className="mt-2 text-sm text-blue-600">
-                🧠 <strong>Suggested Driver:</strong> {trip.suggestedDriver_name}
-              </div>
-            )}
+            {trip.flagReason && <div className="mt-3 text-sm text-red-600">🚨 <strong>Flagged:</strong> {trip.flagReason}</div>}
+            {trip.suggestedDriver_name && <div className="mt-2 text-sm text-blue-600">🧠 <strong>Suggested Driver:</strong> {trip.suggestedDriver_name}</div>}
 
             {trip.statusHistory && (
               <div className="mt-3 text-xs text-gray-600">
                 <p className="font-semibold">Status History:</p>
                 <ul className="list-disc ml-4">
                   {trip.statusHistory.map((entry, i) => (
-                    <li key={i}>
-                      {entry.status} @ {new Date(entry.timestamp).toLocaleString()}
-                    </li>
+                    <li key={i}>{entry.status} @ {new Date(entry.timestamp).toLocaleString()}</li>
                   ))}
                 </ul>
               </div>
@@ -195,19 +134,13 @@ export default function TripDashboard({ userId }) {
             <IncidentReporter tripId={trip.id} />
             <TripSignatureBlock driverName={trip.driver_name} />
 
-            {/* ✅ Trip Map */}
             {trip.routeData?.path && (
               <div className="mt-6">
                 <h4 className="text-sm font-semibold mb-2">🗺️ Route Overview</h4>
-                <TripMap
-                  origin={trip.origin}
-                  destination={trip.destination}
-                  routeData={trip.routeData}
-                />
+                <TripMap origin={trip.origin} destination={trip.destination} routeData={trip.routeData} />
               </div>
             )}
 
-            {/* ✅ Logsheet Renderer */}
             {trip.analysis?.dailyLogs?.length > 0 && (
               <div className="mt-6">
                 <h4 className="text-sm font-semibold mb-2">📋 Daily Logsheet</h4>
@@ -215,7 +148,6 @@ export default function TripDashboard({ userId }) {
               </div>
             )}
 
-            {/* ✅ Replay Toggle */}
             {trip.coordinates && (
               <>
                 <button
@@ -228,7 +160,9 @@ export default function TripDashboard({ userId }) {
               </>
             )}
 
-            {/* 🧪 Diagnostic Overlay */}
+            <TripExportPreview trip={trip} />
+            <TripExportSignatureBlock trip={trip} />
+
             <details className="mt-6 bg-gray-50 p-3 rounded text-xs">
               <summary className="cursor-pointer font-semibold text-gray-700">🔍 Trip Payload Debug</summary>
               <pre className="overflow-x-auto mt-2">{JSON.stringify(trip, null, 2)}</pre>
