@@ -45,7 +45,7 @@ export const updateLiveLocation = async (tripId, lat, lng) => {
   });
 };
 
-export const listenToLiveTrip = (tripId, callback) => {
+export const listenToLiveTrip = async (tripId, callback) => {
   const tripRef = doc(db, "trips", tripId);
   return onSnapshot(tripRef, (docSnap) => {
     if (docSnap.exists()) callback(docSnap.data());
@@ -149,24 +149,17 @@ export const assignTripVehicleDriver = async (tripId, vehicleId, driverName) => 
   });
 };
 
-// Export all services and functions
+export const updateRole = async (uid, role) => {
+  const userRef = doc(db, "users", uid);
+  await updateDoc(userRef, { role });
+};
+
+// ✅ Final Export Block (deduplicated)
 export {
   app,
   analytics,
   db,
   auth,
   messaging,
-  storage,
-  updateLiveLocation,
-  listenToLiveTrip,
-  flagSLABreach,
-  logTripIncident,
-  logTripVersion,
-  lockTripSignature,
-  patchTripRiskAnalysis,
-  flagRouteDeviation,
-  flagIdleTimeAnomaly,
-  flagMetadataIssue,
-  syncTripDispatchStatus,
-  assignTripVehicleDriver
+  storage
 };
