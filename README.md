@@ -1,42 +1,36 @@
-# 🚀 FleetTrack Cockpit XI || FleetAI Console — Azania+ Crown Jewel Edition
+🚀 FleetTrack XII
 
-FleetTrack is a cockpit-grade, installable, and modular logistics intelligence system built for African fleets. Azania+ Crown Jewel Edition combines real-time tracking, predictive dispatch, audit-grade exports, and mobile resilience into a sovereign operational command suite.
+🧠 Intelligence Engines
+- QVector Routing Engine
+Predictive trip planning with congestion avoidance, ETA optimization, and real-time rerouting.
+- Centurion Grid Mesh Coordination
+Decentralized fleet syncing across regions, enabling patrol overlap, convoy logic, and multi-node awareness.
+- Audit Overlay Engine
+Signature blocks, fuel analytics, trip replay, and compliance-grade visibility for every route and event.
 
----
+🖥️ Cockpit-Grade UI/UX
+- Sidebar navigation with logical grouping, breathing room, and visual hierarchy
+- Operator-first layout with ARIA roles, accessibility validation, and real-time responsiveness
+- Modular dashboards for trip planning, fleet alerts, and incident review
 
-## 🌍 About FleetTrack
+🔐 Security & Permissions
+- Firestore rules scoped to driver UID, fleet roles, and document-level access
+- Snapshot listeners hardened against permission errors and async race conditions
+- Audit-ready logging via FleetAlert with UTC timestamps and event traceability
 
-FleetTrack is designed for:
+📡 Real-Time Ops
+- Firebase Messaging integration for trip alerts, route changes, and fleet-wide broadcasts
+- Service Worker support for background sync and offline resilience
+- Middleware pipeline for request validation, role enforcement, and data integrity
 
-- Government fleets
-- Courier and retail logistics
-- Aviation, maritime, and drone operators
-- Compliance-heavy sectors needing audit-grade exports
+📊 Analytics & Reporting
+- Fuel usage tracking with sensor overlays and trip-based summaries
+- Route efficiency scoring and driver performance metrics
+- Export-ready audit logs for compliance, insurance, and incident review
 
-Built in South Africa, FleetTrack offers cockpit-grade clarity, predictive overlays, and mobile-first resilience. It’s installable, Firebase-powered, and ready for continent-wide deployment.
+🧩 Extensibility & Deployment
+- Modular architecture for feature overlays, regional plugins, and hardware integrations
+- Compatible with GPS trackers, fuel sensors, and municipal fleet hardware
+- Ready for deployment across cargo fleets, security patrols, and government transport
 
----
 
-## 🧠 Key Modules
-
-- **Cockpit XI**: Trip planning, dashboard, logsheet viewer, export engine
-- **FleetAI Console X**: Predictive dispatch, breach forecasting, route optimization
-- **Command Suite**: Admin console, telemetry panel, billing dashboard, mobile sync engine
-- **Mobile Layer**: Offline trip capture, installable PWA, sync diagnostics
-
----
-
-## 📸 Screenshots
-
-> Screenshots coming soon in `/docs/screenshots/`  
-> Include: Dashboard, FleetAI Console, Mobile Sync, Admin Console, Telemetry Panel
-
----
-
-## 📱 Install Instructions
-
-### 1. Clone the repo
-
-```bash
-git clone https://github.com/Sizwe780/fleettrack.git
-cd fleettrack
