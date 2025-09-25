@@ -1,103 +1,103 @@
-import React, { useEffect, useRef } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
-import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import React from 'react';
+import QRCode from 'react-qr-code';
+import './Logsheet.css';
+import { MapContainer, TileLayer, Polyline, Marker, Popup } from 'react-leaflet';
 
-mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN;
+const TripLogsheetPro = ({ trip }) => {
+  const {
+    tripId, origin, destination, driverName, vehicleId,
+    startTime, endTime, duration, routeSummary,
+    stops, remarks, status, exportedAt, audit_hash,
+    tripPath, driverSignature, signedAt
+  } = trip;
 
-export default function TripLogsheet({ trip }) {
-  const mapContainerRef = useRef(null);
-
-  useEffect(() => {
-    if (!trip || !mapContainerRef.current) return;
-
-    const map = new mapboxgl.Map({
-      container: mapContainerRef.current,
-      style: 'mapbox://styles/mapbox/streets-v11',
-      center: [trip.origin.longitude, trip.origin.latitude],
-      zoom: 8
-    });
-
-    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
-
-    new mapboxgl.Marker().setLngLat([trip.origin.longitude, trip.origin.latitude]).addTo(map);
-
-    new mapboxgl.Marker().setLngLat([trip.destination.longitude, trip.destination.latitude]).addTo(map);
-
-    map.on('load', () => {
-      if (trip.routeData && trip.routeData.coordinates.length > 0) {
-        map.addSource('route', {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            properties: {},
-            geometry: trip.routeData
-          }
-        });
-        map.addLayer({
-          id: 'route',
-          type: 'line',
-          source: 'route',
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round'
-          },
-          paint: {
-            'line-color': '#3887be',
-            'line-width': 5,
-            'line-opacity': 0.75
-          }
-        });
-
-        const bounds = new mapboxgl.LngLatBounds();
-        bounds.extend([trip.origin.longitude, trip.origin.latitude]);
-        bounds.extend([trip.destination.longitude, trip.destination.latitude]);
-        map.fitBounds(bounds, { padding: 50 });
-      }
-    });
-
-    return () => map.remove();
-  }, [trip]);
-
-  const handleExport = () => {
-    const doc = new jsPDF();
-    doc.setFontSize(18);
-    doc.text("Daily Logsheet", 14, 22);
-
-    doc.autoTable({
-      startY: 30,
-      head: [['Field', 'Details']],
-      body: [
-        ['Driver Name', trip.driver_name || 'N/A'],
-        ['Origin', trip.origin.location || 'N/A'],
-        ['Destination', trip.destination.location || 'N/A'],
-        ['Date', trip.date || 'N/A'],
-        ['Departure Time', trip.departure_time || 'N/A'],
-        ['Cycle Used', trip.cycle_used || 'N/A']
-      ]
-    });
-
-    doc.setFontSize(14);
-    doc.text("Remarks:", 14, doc.autoTable.previous.finalY + 10);
-    doc.setFontSize(12);
-    const splitText = doc.splitTextToSize(trip.remarks || 'No remarks provided.', 180);
-    doc.text(splitText, 14, doc.autoTable.previous.finalY + 18);
-
-    doc.save(`logsheet-${trip._id || 'new-trip'}.pdf`);
+  const formatDate = (dateStr) => {
+    const date = new Date(dateStr);
+    return isNaN(date.getTime()) ? '—' : date.toLocaleString();
   };
 
-  if (!trip) return null;
-
   return (
-    <div>
-      <h3>Trip Logsheet</h3>
-      <div ref={mapContainerRef} style={{ height: '400px', width: '100%' }} />
-      <div style={{ marginTop: '20px' }}>
-        <h4>Remarks</h4>
-        <p>{trip.remarks || 'No remarks recorded for this trip.'}</p>
-        <button onClick={handleExport}>Export Logsheet as PDF</button>
-      </div>
+    <div className="logsheet-container">
+      {/* Header */}
+      <header className="logsheet-header">
+        <img src="/logo.png" alt="Company Logo" className="logsheet-logo" />
+        <h1>Trip Logsheet</h1>
+        <p><strong>Trip ID:</strong> {tripId || '—'}</p>
+      </header>
+
+      {/* Metadata */}
+      <section className="logsheet-section">
+        <h2>Trip Metadata</h2>
+        <ul>
+          <li><strong>Origin:</strong> {origin || '—'}</li>
+          <li><strong>Destination:</strong> {destination || '—'}</li>
+          <li><strong>Driver:</strong> {driverName || '—'}</li>
+          <li><strong>Vehicle:</strong> {vehicleId || '—'}</li>
+          <li><strong>Start Time:</strong> {formatDate(startTime)}</li>
+          <li><strong>End Time:</strong> {formatDate(endTime)}</li>
+          <li><strong>Duration:</strong> {duration ? `${duration.toFixed(2)} hrs` : '—'}</li>
+          <li><strong>Status:</strong> {status || '—'}</li>
+        </ul>
+      </section>
+
+      {/* Route Summary */}
+      <section className="logsheet-section">
+        <h2>Route Summary</h2>
+        <p>{routeSummary?.trim() || '—'}</p>
+      </section>
+
+      {/* Stops & Remarks */}
+      <section className="logsheet-section">
+        <h2>Stops & Remarks</h2>
+        <ul>
+          {stops?.length > 0 ? stops.map((stop, idx) => (
+            <li key={idx}>
+              <strong>{stop.location || 'Unknown Stop'}</strong> @ {formatDate(stop.timestamp)} — {remarks?.[idx] || stop.remark || 'No remark'}
+            </li>
+          )) : <li>No stops recorded.</li>}
+        </ul>
+      </section>
+
+      {/* Trip Map */}
+      {tripPath?.length > 1 && (
+        <section className="logsheet-section">
+          <h2>Trip Route Map</h2>
+          <MapContainer center={[tripPath[0].lat, tripPath[0].lng]} zoom={6} scrollWheelZoom={false} style={{ height: '300px', borderRadius: '8px' }}>
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <Polyline positions={tripPath.map(p => [p.lat, p.lng])} color="blue" />
+            {stops?.map((stop, i) => (
+              <Marker key={i} position={[stop.lat, stop.lng]}>
+                <Popup>
+                  <strong>{stop.location}</strong><br />
+                  {stop.remark}
+                </Popup>
+              </Marker>
+            ))}
+          </MapContainer>
+        </section>
+      )}
+
+      {/* Signature */}
+      <section className="logsheet-section">
+        <h2>Driver Signature</h2>
+        <div className="signature-box">
+          {driverSignature ? (
+            <img src={driverSignature} alt="Driver Signature" style={{ maxHeight: '100px' }} />
+          ) : (
+            <p><em>Signature:</em> ____________________________</p>
+          )}
+          <p><em>Date:</em> {formatDate(signedAt || endTime)}</p>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="logsheet-footer">
+        <p><strong>Exported:</strong> {formatDate(exportedAt)}</p>
+        {audit_hash && <p><strong>Audit Hash:</strong> {audit_hash}</p>}
+        <QRCode value={`https://fleettrack.app/trip/${tripId}`} size={64} />
+      </footer>
     </div>
   );
-}
+};
+
+export default TripLogsheetPro;

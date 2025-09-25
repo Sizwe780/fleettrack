@@ -65,7 +65,6 @@ export default function TripDashboard({ userId }) {
 
   return (
     <div className="max-w-6xl mx-auto mt-10 space-y-8">
-      <h2 className="text-2xl font-bold">🚚 Fleet Intelligence Console</h2>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-6">
         <div className="bg-green-50 p-3 rounded">

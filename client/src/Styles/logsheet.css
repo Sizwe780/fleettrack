@@ -1,0 +1,164 @@
+.logsheet-container {
+  width: 100%;
+  padding: 20px;
+  font-family: 'Courier New', monospace;
+  background: #fff;
+  color: #000;
+  box-sizing: border-box;
+}
+
+/* Header */
+.logsheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 2px solid #333;
+  margin-bottom: 20px;
+}
+.logsheet-logo {
+  height: 60px;
+  object-fit: contain;
+}
+
+/* Sections */
+.logsheet-section {
+  margin-bottom: 20px;
+}
+.logsheet-section h2 {
+  font-size: 18px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 4px;
+}
+.logsheet-section ul {
+  list-style-type: none;
+  padding-left: 0;
+}
+.logsheet-section li {
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+/* Map */
+.trip-map {
+  height: 300px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+/* Drawing */
+.log-drawing {
+  border: 1px solid #999;
+  background: #fff;
+  padding: 10px;
+  margin-bottom: 20px;
+}
+
+/* Signature */
+.signature-box {
+  border: 1px solid #333;
+  padding: 12px;
+  height: 100px;
+  background: #fdfdfd;
+  font-family: 'Courier New', monospace;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.signature-box p {
+  margin: 4px 0;
+}
+
+/* Footer */
+.logsheet-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 2px solid #333;
+  padding-top: 10px;
+  margin-top: 30px;
+  font-size: 14px;
+}
+
+/* Print Layout */
+@media print {
+  body {
+    width: 297mm;
+    height: 420mm;
+    margin: 0;
+    padding: 20mm;
+    font-size: 14pt;
+    background: white;
+    color: black;
+  }
+
+  .logsheet-container {
+    page-break-after: always;
+    background: white;
+    color: black;
+  }
+
+  .logsheet-logo {
+    height: 80px;
+  }
+
+  .logsheet-section h2 {
+    font-size: 20px;
+    border-bottom: 2px solid #000;
+  }
+
+  .logsheet-footer {
+    font-size: 12pt;
+    border-top: 2px solid #000;
+  }
+
+  .trip-map {
+    display: none;
+  }
+
+  .log-drawing {
+    page-break-inside: avoid;
+    border: 1px solid #000;
+  }
+
+  .signature-box {
+    border: 2px solid #000;
+    height: 120px;
+    font-size: 14pt;
+  }
+
+  .logsheet-section li {
+    font-size: 14pt;
+  }
+}
+
+.sla-breach {
+  background: #ffebeb;
+  border-left: 4px solid #d00;
+  padding: 10px;
+  margin-bottom: 20px;
+  font-weight: bold;
+  color: #900;
+}
+
+.audit-watermark {
+  position: fixed;
+  bottom: 10mm;
+  right: 20mm;
+  font-size: 10pt;
+  color: #999;
+  opacity: 0.6;
+}
+
+.sla-breach.deviation {
+  border-left-color: #f90;
+  color: #b36;
+}
+
+.signature-canvas {
+  border: 1px solid #333;
+  background: #fff;
+  border-radius: 4px;
+}

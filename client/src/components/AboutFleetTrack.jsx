@@ -2,18 +2,13 @@ import React from 'react';
 
 export default function AboutFleetTrack() {
   return (
-    <div className="max-w-4xl mx-auto p-6 bg-white rounded shadow">
-      <h2 className="text-2xl font-bold mb-4">🚀 About FleetTrack OIP</h2>
-      <p className="mb-4">
-        FleetTrack is Africa’s first compliance-grade logistics intelligence platform—built for public-sector fleets, field ops, and real-world consequence.
+    <div className="bg-white p-6 rounded-xl shadow mt-10 max-w-3xl mx-auto">
+      <h2 className="text-xl font-bold mb-4">🌍 About FleetTrack</h2>
+      <p className="text-sm leading-relaxed">
+        FleetTrack is Africa’s platinum-grade logistics intelligence platform—built for compliance, trust, and operational consequence. 
+        We serve government fleets, courier networks, aviation, maritime, and intermodal operators with cockpit-grade dashboards, audit overlays, and predictive analytics.
+        Every module is designed for export readiness, SLA resilience, and investor-grade clarity.
       </p>
-      <p className="mb-4">
-        Powered by AI superintelligence, FleetTrack integrates predictive maintenance, driver sentiment analysis, route optimization, and audit-grade compliance scoring. Every module is installable, offline-resilient, and demo-ready.
-      </p>
-      <p className="mb-4">
-        Our AI companion doesn’t just analyze data—it helps you make decisions. From incident logging to shift optimization, FleetTrack turns fleet noise into operational clarity.
-      </p>
-      <p className="text-sm text-gray-500">Version: OIP v3.5+ | Architected by Sizwe Ngwenya</p>
     </div>
   );
 }

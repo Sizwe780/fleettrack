@@ -1,91 +1,100 @@
-// src/App.js
-import React, { useState, useEffect } from 'react';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
-  getFirestore
-} from 'firebase/firestore';
-import {
-  initializeApp,
-  getApps,
-  getApp
-} from 'firebase/app';
-import {
-  Loader,
-  Truck,
-  Home,
-  Plus,
-  ListChecks,
-  Wrench,
-  BarChart2,
-  TrendingUp,
-  ShieldCheck,
-  MapPin,
-  LogOut
-} from 'lucide-react';
-import TripPlanner from './components/TripPlanner';
-import MyTripsDashboard from './components/TripDashboard';
-import FleetAnalytics from './pages/FleetAnalytics';
-import TripCompare from './pages/TripCompare';
-import FleetHealth from './pages/FleetHealth';
-import Dashboard from './pages/Dashboard';
-import MaintenanceTracker from './components/MaintenanceTracker';
-import SidebarLayout from './components/SidebarLayout';
-// Example fix if the file is named TripsDashboard.jsx
+import React, { useState, useEffect } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { auth, db } from "./firebase";
+import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAla1ZaxyeLc9WBDvKbAS8I9hUZnxIWxPg",
-  authDomain: "fleettrack-84eb6.firebaseapp.com",
-  projectId: "fleettrack-84eb6",
-  storageBucket: "fleettrack-84eb6.appspot.com",
-  messagingSenderId: "918797565578",
-  appId: "1:918797565578:web:34dfa9992cd5a4a3cbf773",
-  measurementId: "G-MKSLF88L7C"
-};
+// Core cockpit modules
+import TripPlanner from "./components/TripPlanner";
+import TripDashboard from "./components/TripDashboard";
+import TripMap from "./components/TripMap";
+import SidebarLayout from "./components/SidebarLayout";
 
-const app = getApps().length === 0 ? initializeApp(FIREBASE_CONFIG) : getApp();
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = 'fleet-track-app';
+// Intelligence and analytics
+import Leaderboard from "./components/Leaderboard";
+import HeatMap from "./components/HeatMap";
+
+// Operational modules
+import ClusterMap from "./components/ClusterMap";
+import Maintenance from "./components/MaintenanceTracker";
+import OfflineLogger from "./components/OfflineTripLogger";
+import RBACEditor from "./components/AdvancedRBACEditor";
+
+// History and export modules
+import TripHistoryViewer from "./components/TripHistoryViewer";
+import TripLogsheetViewer from "./components/TripLogsheetViewer";
+
+// Platform infrastructure
+import NotificationCenter from "./components/NotificationCenter";
+import FleetAssistantBot from "./components/FleetAssistantBot";
+import HelpCenter from "./components/HelpCenter";
+import AboutFleetTrack from "./components/AboutFleetTrack";
+import ContactUs from "./components/ContactUs";
+import PrivacyPolicy from "./components/PrivacyPolicy";
+import TermsOfService from "./components/TermsOfService";
+import SubscriptionManager from "./components/SubscriptionManager";
+import UserProfile from "./components/UserProfile";
+
+// FleetAI Console
+import FleetAIConsole from "./components/FleetAIConsole";
+
+// Command Suite
+import FleetOpsTelemetryPanel from "./components/FleetOpsTelemetryPanel";
+import AdminConsole from "./components/AdminConsole";
+import FleetBillingDashboard from "./components/FleetBillingDashboard";
+import MobileSyncStatus from "./components/MobileSyncStatus";
+import TripTamperDetector from "./components/TripTamperDetector";
+
+// UI
+import LightBulbIcon from "@heroicons/react/24/outline/LightBulbIcon";
+
+const appId = "fleet-track-app";
 
 const App = () => {
-  const [activeView, setActiveView] = useState('dashboard');
   const [userId, setUserId] = useState(null);
   const [trips, setTrips] = useState([]);
   const [selectedTrip, setSelectedTrip] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [locationDetected, setLocationDetected] = useState(false);
 
+  // Firebase auth listener
   useEffect(() => {
     onAuthStateChanged(auth, user => {
-      user ? setUserId(user.uid) : signInAnonymously(auth);
+      if (user) {
+        setUserId(user.uid);
+      } else {
+        signInAnonymously(auth)
+          .then(res => setUserId(res.user.uid))
+          .catch(err => console.error("Anonymous sign-in failed:", err));
+      }
     });
   }, []);
 
+  // Trip sync from Firestore
   useEffect(() => {
     if (!userId) return;
 
-    const tripsQuery = query(
-      collection(db, `apps/${appId}/trips`),
-      where('driver_uid', '==', userId),
-      orderBy('timestamp', 'desc')
-    );
+    try {
+      const tripsQuery = query(
+        collection(db, `apps/${appId}/trips`),
+        where("driver_uid", "==", userId),
+        orderBy("timestamp", "desc")
+      );
 
-    const unsubscribe = onSnapshot(tripsQuery, snapshot => {
-      setTrips(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setIsLoading(false);
-    }, error => {
-      console.error('Snapshot error:', error.message);
-      setIsLoading(false);
-    });
+      const unsubscribe = onSnapshot(tripsQuery, snapshot => {
+        const tripData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setTrips(tripData);
+      });
 
-    return unsubscribe;
+      return unsubscribe;
+    } catch (err) {
+      console.error("Trip fetch failed:", err);
+    }
   }, [userId]);
 
+  // Location detection
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       () => setLocationDetected(true),
@@ -93,178 +102,109 @@ const App = () => {
     );
   }, []);
 
-  const handleTripSelect = (trip) => {
-    setSelectedTrip(trip);
-    setActiveView('details');
-  };
+  const handleTripSelect = trip => setSelectedTrip(trip);
 
-  const renderView = () => {
-    if (isLoading) {
-      return (
-        <div className="flex items-center justify-center h-screen">
-          <Loader className="animate-spin w-12 h-12 text-blue-600" />
-        </div>
-      );
-    }
+  return (
+    <div className="flex min-h-screen w-full bg-[#f3e8ff]">
+      <SidebarLayout />
+      <main className="flex-1 pt-6 px-6 flex justify-center items-start">
+        <div className="w-full max-w-[1600px] h-full bg-gray-50 rounded-2xl shadow-2xl border border-gray-200 p-6 overflow-y-auto">
+          {/* Trip Intelligence Console Title */}
+          <div className="flex items-center justify-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
+              Trip Intelligence Console
+              <LightBulbIcon className="h-7 w-7 text-indigo-600" />
+            </h2>
+          </div>
 
-    if (!userId) {
-      return (
-        <div className="p-6 text-center text-gray-600">
-          <p>Authenticating user... Please wait.</p>
-        </div>
-      );
-    }
-
-    switch (activeView) {
-      case 'planner':
-        return (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <span className={`w-4 h-4 rounded-full ${locationDetected ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span className="text-sm text-gray-600">Location {locationDetected ? 'Detected' : 'Unavailable'}</span>
-            </div>
-            <TripPlanner
-              userId={userId}
-              onTripCreated={handleTripSelect}
-              appId={appId}
-              locationDetected={locationDetected}
+          {/* Embedded Map */}
+          {selectedTrip?.analysis?.routeData && (
+            <TripMap
+              origin={selectedTrip.origin}
+              destination={selectedTrip.destination}
+              routeData={selectedTrip.analysis.routeData}
             />
-          </div>
-        );
-      case 'my-trips':
-        return <MyTripsDashboard trips={trips} onTripSelect={handleTripSelect} />;
-      case 'fleet-health':
-        return <FleetHealth />;
-      case 'maintenance':
-        return <MaintenanceTracker trips={trips} />;
-      case 'analytics':
-        return <FleetAnalytics />;
-      case 'compare':
-        return <TripCompare />;
-      case 'details':
-        return selectedTrip ? <Dashboard trip={selectedTrip} /> : (
-          <div className="p-6 text-gray-500">No trip selected. Choose one from <strong>My Trips</strong>.</div>
-        );
-      default:
-        return (
-          <div className="p-6">
-            <h2 className="text-xl font-bold mb-4">Welcome to FleetTrack</h2>
-            <p className="text-gray-600">Select a view from the sidebar to get started.</p>
-          </div>
-        );
-    }
-  };const SidebarLayout = ({ activeView, setActiveView }) => {
-    const navItems = [
-      { view: 'dashboard', label: 'Dashboard', icon: <Home /> },
-      { view: 'planner', label: 'New Trip', icon: <Plus /> },
-      { view: 'my-trips', label: 'My Trips', icon: <ListChecks /> },
-      { view: 'maintenance', label: 'Maintenance', icon: <Wrench /> },
-      { view: 'analytics', label: 'Fleet Analytics', icon: <BarChart2 /> },
-      { view: 'compare', label: 'Compare Trips', icon: <TrendingUp /> },
-      { view: 'fleet-health', label: 'Fleet Health', icon: <ShieldCheck /> }
-    ];
-  
-    return (
-      <aside className="bg-white px-4 py-6 shadow-lg md:min-h-screen md:w-64 border-r border-gray-200 -ml-4">
-        <div className="flex items-center space-x-3 mb-10">
-          <div className="bg-blue-600 p-2 rounded-lg">
-            <Truck className="w-8 h-8 text-white" />
-          </div>
-          <span className="text-2xl font-bold text-gray-800">FleetTrack</span>
-        </div>
-        <nav className="flex flex-col space-y-3">
-          {navItems.map(({ view, label, icon }) => (
-            <NavButton
-              key={view}
-              view={view}
-              label={label}
-              icon={icon}
-              activeView={activeView}
-              onClick={setActiveView}
+          )}
+
+          {/* Routed Views */}
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" />} />
+            <Route
+              path="/dashboard"
+              element={
+                <TripDashboard
+                  trip={selectedTrip}
+                  trips={trips}
+                  onTripSelect={handleTripSelect}
+                />
+              }
             />
-          ))}
-        </nav>
-      </aside>
-    );
-  };
-  
-  const NavButton = ({ view, label, icon, activeView, onClick }) => {
-    const isActive = activeView === view;
-    return (
-      <button
-        onClick={() => onClick(view)}
-        className={`flex items-center space-x-2 px-4 py-2 rounded-md ${
-          isActive ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-100'
-        }`}
-      >
-        {icon}
-        <span>{label}</span>
-      </button>
-    );
-  };// Optional diagnostic overlay (if enabled in settings or debug mode)
-  const DiagnosticOverlay = ({ trip }) => {
-    if (!trip || !trip.debug) return null;
-  
-    return (
-      <div className="fixed bottom-4 right-4 bg-white shadow-lg border border-gray-300 rounded-lg p-4 z-50 w-96">
-        <h3 className="text-lg font-semibold mb-2 text-blue-700">Diagnostic Payload</h3>
-        <pre className="text-xs text-gray-800 whitespace-pre-wrap break-words">
-          {JSON.stringify(trip.payload, null, 2)}
-        </pre>
-      </div>
-    );
-  };
-  
-  // Optional replay toggle (for compliance or audit mode)
-  const ReplayToggle = ({ trip, onReplay }) => {
-    if (!trip || !trip.replayEnabled) return null;
-  
-    return (
-      <div className="flex items-center justify-between bg-gray-50 border-t border-gray-200 px-4 py-2">
-        <span className="text-sm text-gray-600">Replay this journey?</span>
-        <button
-          onClick={() => onReplay(trip)}
-          className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          Replay
-        </button>
-      </div>
-    );
-  };
-  
-  // Optional export panel (for PDF or CSV generation)
-  const ExportPanel = ({ trip }) => {
-    if (!trip || !trip.exportable) return null;
-  
-    return (
-      <div className="mt-6 border-t pt-4">
-        <h4 className="text-md font-semibold text-gray-700 mb-2">Export Options</h4>
-        <div className="flex gap-3">
-          <button className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-            Export PDF
-          </button>
-          <button className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
-            Export CSV
-          </button>
+            <Route
+              path="/plan"
+              element={
+                <TripPlanner
+                  userId={userId}
+                  onTripCreated={handleTripSelect}
+                  appId={appId}
+                  locationDetected={locationDetected}
+                />
+              }
+            />
+            <Route path="/leaderboard" element={<Leaderboard />} />
+            <Route path="/heatmap" element={<HeatMap />} />
+            <Route path="/clustermap" element={<ClusterMap />} />
+            <Route path="/maintenance" element={<Maintenance />} />
+            <Route path="/offline" element={<OfflineLogger userId={userId} appId={appId} />} />
+            <Route path="/rbac" element={<RBACEditor userId={userId} />} />
+            <Route
+              path="/history"
+              element={
+                <TripHistoryViewer
+                  userId={userId}
+                  appId={appId}
+                  onTripSelect={handleTripSelect}
+                />
+              }
+            />
+            <Route
+              path="/logsheet"
+              element={
+                <TripLogsheetViewer
+                  trip={selectedTrip}
+                  userId={userId}
+                  appId={appId}
+                />
+              }
+            />
+
+            {/* Platform routes */}
+            <Route path="/notifications" element={<NotificationCenter />} />
+            <Route path="/chatbot" element={<FleetAssistantBot />} />
+            <Route path="/help" element={<HelpCenter />} />
+            <Route path="/about" element={<AboutFleetTrack />} />
+            <Route path="/contact" element={<ContactUs />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/terms" element={<TermsOfService />} />
+            <Route path="/subscription" element={<SubscriptionManager userId={userId} />} />
+            <Route path="/profile" element={<UserProfile user={{ uid: userId }} />} />
+
+            {/* FleetAI Console */}
+            <Route path="/ai-console" element={<FleetAIConsole trips={trips} selectedTrip={selectedTrip} drivers={[]} />} />
+
+            {/* Command Suite */}
+            <Route path="/telemetry" element={<FleetOpsTelemetryPanel />} />
+            <Route path="/admin" element={<AdminConsole />} />
+            <Route path="/billing" element={<FleetBillingDashboard />} />
+            <Route path="/mobile-sync" element={<MobileSyncStatus />} />
+            <Route path="/compliance" element={<TripTamperDetector />} />
+
+            {/* Fallback */}
+            <Route path="*" element={<Navigate to="/dashboard" />} />
+          </Routes>
         </div>
-      </div>
-    );
-  };
-  
-  // Final JSX closure with optional overlays
-    return (
-      <div className="min-h-screen bg-gray-100 font-sans text-gray-800">
-        <div className="flex flex-col md:flex-row max-w-screen-xl mx-auto">
-          <SidebarLayout activeView={activeView} setActiveView={setActiveView} />
-          <main className="flex-1 p-4 md:p-8 bg-gray-100 overflow-y-auto">
-            {renderView()}
-            <DiagnosticOverlay trip={selectedTrip} />
-            <ReplayToggle trip={selectedTrip} onReplay={handleTripSelect} />
-            <ExportPanel trip={selectedTrip} />
-          </main>
-        </div>
-      </div>
-    );
-  };
-  
-  export default App;
+      </main>
+    </div>
+  );
+};
+
+export default App;

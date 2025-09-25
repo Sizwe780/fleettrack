@@ -1,42 +1,8 @@
-const mongoose = require('mongoose');
+const express = require('express');
+const router = express.Router();
+const { createTrip, getTripById } = require('../controllers/tripController');
 
-const TripSchema = new mongoose.Schema({
-  userId: {
-    type: String,
-    required: true,
-  },
-  driver_name: String,
-  date: String,
-  current_location: String,
-  cycle_used: String,
-  departure_time: String,
-  origin: {
-    location: String,
-    latitude: Number,
-    longitude: Number,
-  },
-  destination: {
-    location: String,
-    latitude: Number,
-    longitude: Number,
-  },
-  remarks: {
-    type: String,
-    default: 'No remarks recorded for this trip.',
-  },
-  routeData: {
-    type: Object,
-    default: null,
-  },
-  status: {
-    type: String,
-    enum: ['pending', 'departed', 'completed', 'critical'],
-    default: 'pending',
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
+router.post('/', createTrip);         // POST /api/trips/submit
+router.get('/:id', getTripById);      // GET /api/trips/submit/:id
 
-module.exports = mongoose.model('Trip', TripSchema);
+module.exports = router;

@@ -8,16 +8,23 @@ const permissions = ['viewTrips', 'submitTrips', 'flagTrips', 'exportTrips', 'ed
 export default function AdvancedRBACEditor() {
   const [matrix, setMatrix] = useState({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchMatrix = async () => {
-      const snapshot = await getDocs(collection(db, 'apps/fleet-track-app/rbac'));
-      const data = {};
-      snapshot.forEach(doc => {
-        data[doc.id] = doc.data();
-      });
-      setMatrix(data);
-      setLoading(false);
+      try {
+        const snapshot = await getDocs(collection(db, 'apps/fleet-track-app/rbac'));
+        const data = {};
+        snapshot.forEach(doc => {
+          data[doc.id] = doc.data();
+        });
+        setMatrix(data);
+      } catch (err) {
+        console.error("Failed to fetch RBAC matrix:", err);
+        setError("Permission error or network issue.");
+      } finally {
+        setLoading(false);
+      }
     };
     fetchMatrix();
   }, []);
@@ -31,11 +38,17 @@ export default function AdvancedRBACEditor() {
 
   const saveMatrix = async () => {
     setLoading(true);
-    for (const role of roles) {
-      await setDoc(doc(db, 'apps/fleet-track-app/rbac', role), matrix[role] || {});
+    try {
+      for (const role of roles) {
+        await setDoc(doc(db, 'apps/fleet-track-app/rbac', role), matrix[role] || {});
+      }
+      alert('RBAC matrix saved.');
+    } catch (err) {
+      console.error("Failed to save RBAC matrix:", err);
+      alert("Save failed. Check permissions or network.");
+    } finally {
+      setLoading(false);
     }
-    alert('RBAC matrix saved.');
-    setLoading(false);
   };
 
   return (
@@ -44,6 +57,8 @@ export default function AdvancedRBACEditor() {
 
       {loading ? (
         <p>Loading...</p>
+      ) : error ? (
+        <p className="text-red-600">{error}</p>
       ) : (
         <table className="w-full border text-xs">
           <thead>
@@ -76,6 +91,7 @@ export default function AdvancedRBACEditor() {
       <button
         onClick={saveMatrix}
         className="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+        disabled={loading}
       >
         Save RBAC Matrix
       </button>
