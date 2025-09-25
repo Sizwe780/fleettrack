@@ -2,21 +2,33 @@ import { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { validateKey } from '../infrastructure/APIKeyVault';
 
-export const sanitizeHeaders = (req: Request, _: Response, next: NextFunction) => {
+/**
+ * 🛡️ Sanitize headers to prevent injection attacks
+ */
+function sanitizeHeaders(req: Request, res: Response, next: NextFunction): void {
   for (const key in req.headers) {
     const value = req.headers[key];
-    if (typeof value === 'string' && /[\r\n]/.test(value)) {
-      return next(new Error('Header injection detected'));
+    if (
+      typeof value === 'string' && /[\r\n]/.test(value) ||
+      Array.isArray(value) && value.some(v => /[\r\n]/.test(v))
+    ) {
+      return next(new Error(`Header injection detected in "${key}"`));
     }
   }
   next();
-};
+}
 
-export const cockpitLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 30,
-  keyGenerator: (req) => req.headers['x-user-id'] || 'unknown',
-  handler: (_, res) => {
+/**
+ * 🚦 Rate limiter for cockpit-grade throughput control
+ */
+const cockpitLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute window
+  max: 30,             // max 30 requests per minute
+  keyGenerator: (req: Request): string => {
+    const userId = req.headers['x-user-id'];
+    return typeof userId === 'string' ? userId : 'unknown';
+  },
+  handler: (_req: Request, res: Response): void => {
     res.status(429).json({
       error: 'Too many requests',
       code: 'RATE_LIMIT_EXCEEDED',
@@ -25,15 +37,18 @@ export const cockpitLimiter = rateLimit({
   }
 });
 
-export const validateAPIKey = (req: Request, res: Response, next: NextFunction) => {
-  const key = req.headers['x-api-key'] as string;
-  const userId = req.headers['x-user-id'] as string;
+/**
+ * 🔐 Validate API key and user identity
+ */
+function validateAPIKey(req: Request, res: Response, next: NextFunction): void {
+  const key = req.headers['x-api-key'];
+  const userId = req.headers['x-user-id'];
   const route = req.originalUrl;
-  const vehicleId = req.query.vehicleId;
+  const vehicleId = typeof req.query.vehicleId === 'string' ? req.query.vehicleId : undefined;
 
   console.log(`[${new Date().toISOString()}] Route: ${route}, User: ${userId}, Vehicle: ${vehicleId}`);
 
-  if (!key || !userId) {
+  if (typeof key !== 'string' || typeof userId !== 'string') {
     return res.status(400).json({
       error: 'Missing API credentials',
       code: 'MISSING_CREDENTIALS',
@@ -50,4 +65,9 @@ export const validateAPIKey = (req: Request, res: Response, next: NextFunction) 
   }
 
   next();
-};
+}
+
+/**
+ * 🧩 Export full request pipeline
+ */
+export const requestPipeline = [sanitizeHeaders, cockpitLimiter, validateAPIKey];
