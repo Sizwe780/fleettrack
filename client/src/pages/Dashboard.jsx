@@ -20,8 +20,26 @@ const Dashboard = () => {
   }, []);
 
   return (
-    <div className="dashboard">
-      <section>
+    <div className="dashboard space-y-6 px-6 py-8">
+      {/* 🧭 Fleet Status */}
+      <div className="flex items-center justify-between bg-white border border-gray-300 rounded-xl shadow-sm p-4">
+        <h2 className="text-xl font-bold text-gray-800">Fleet Status</h2>
+        <span
+          className={`px-3 py-1 rounded-full text-sm font-medium ${
+            fleetStatus === "Operational"
+              ? "bg-green-100 text-green-700"
+              : "bg-red-100 text-red-700"
+          }`}
+        >
+          {fleetStatus}
+        </span>
+      </div>
+
+      {/* 🚨 Fleet Alerts */}
+      <FleetAlerts alerts={alerts} />
+
+      {/* 📝 Trip Planner */}
+      <section className="bg-white border border-gray-300 rounded-xl shadow-md p-6">
         <TripPlanner />
       </section>
     </div>

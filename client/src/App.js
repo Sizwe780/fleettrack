@@ -1,69 +1,97 @@
-import React, { useState, useEffect } from "react";
+// src/App.js
+import React, { useState, useEffect, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { auth, db } from "./firebase";
 import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 
-// Core cockpit modules
-import TripPlanner from "./components/TripPlanner";
-import TripDashboard from "./components/TripDashboard";
-import TripMap from "./components/TripMap";
-import SidebarLayout from "./components/SidebarLayout";
+// You have a very large component surface. Rather than list hundreds of single imports
+// here, this App uses a lightweight components index that re-exports named components
+// from ./components/*. This keeps App.js maintainable while preserving explicit routes.
+//
+// Create (if not present) src/components/index.js that exports named components you use:
+// export { default as SidebarLayout } from "./SidebarLayout";
+// export { default as TripDashboard } from "./TripDashboard";
+// export { default as TripPlanner } from "./TripPlanner";
+// ...
+//
+// The file below assumes such an index exists and exports the components referenced in routeConfig.
+import * as C from "./components"; // C.SidebarLayout, C.TripMap, C.CenturrionGrid, etc.
 
-// Intelligence and analytics
-import Leaderboard from "./components/Leaderboard";
-import HeatMap from "./components/HeatMap";
-
-// Operational modules
-import ClusterMap from "./components/ClusterMap";
-import Maintenance from "./components/MaintenanceTracker";
-import OfflineLogger from "./components/OfflineTripLogger";
-import RBACEditor from "./components/AdvancedRBACEditor";
-
-// History and export modules
-import TripHistoryViewer from "./components/TripHistoryViewer";
-import TripLogsheetViewer from "./components/TripLogsheetViewer";
-
-// Platform infrastructure
-import NotificationCenter from "./components/NotificationCenter";
-import FleetAssistantBot from "./components/FleetAssistantBot";
-import HelpCenter from "./components/HelpCenter";
-import AboutFleetTrack from "./components/AboutFleetTrack";
-import ContactUs from "./components/ContactUs";
-import PrivacyPolicy from "./components/PrivacyPolicy";
-import TermsOfService from "./components/TermsOfService";
-import SubscriptionManager from "./components/SubscriptionManager";
-import UserProfile from "./components/UserProfile";
-
-// FleetAI Console
-import FleetAIConsole from "./components/FleetAIConsole";
-
-// Command Suite
-import FleetOpsTelemetryPanel from "./components/FleetOpsTelemetryPanel";
-import AdminConsole from "./components/AdminConsole";
-import FleetBillingDashboard from "./components/FleetBillingDashboard";
-import MobileSyncStatus from "./components/MobileSyncStatus";
-import TripTamperDetector from "./components/TripTamperDetector";
-
-// UI
 import { LightBulbIcon } from "@heroicons/react/24/outline";
 
 const appId = "fleet-track-app";
+
+const routeConfig = [
+  { path: "/", redirectTo: "/dashboard" },
+
+  // Core cockpit
+  { path: "/dashboard", comp: "TripDashboard", props: (ctx) => ({ trip: ctx.selectedTrip, trips: ctx.trips, onTripSelect: ctx.handleTripSelect }) },
+  { path: "/plan", comp: "TripPlanner", props: (ctx) => ({ userId: ctx.userId, onTripCreated: ctx.handleTripSelect, appId, locationDetected: ctx.locationDetected }) },
+  { path: "/map", comp: "TripMap", props: (ctx) => ({ origin: ctx.selectedTrip?.origin, destination: ctx.selectedTrip?.destination, routeData: ctx.selectedTrip?.analysis?.routeData }) },
+
+  // Intelligence & analytics
+  { path: "/leaderboard", comp: "Leaderboard" },
+  { path: "/heatmap", comp: "HeatMap" },
+  { path: "/fleet-analytics", comp: "FleetAnalytics" },
+
+  // Operational
+  { path: "/clustermap", comp: "ClusterMap" },
+  { path: "/maintenance", comp: "MaintenanceTracker" },
+  { path: "/offline", comp: "OfflineTripLogger", props: (ctx) => ({ userId: ctx.userId, appId }) },
+  { path: "/rbac", comp: "AdvancedRBACEditor", props: (ctx) => ({ userId: ctx.userId }) },
+
+  // History & exports
+  { path: "/history", comp: "TripHistoryViewer", props: (ctx) => ({ userId: ctx.userId, appId, onTripSelect: ctx.handleTripSelect }) },
+  { path: "/logsheet", comp: "TripLogsheetViewer", props: (ctx) => ({ trip: ctx.selectedTrip, userId: ctx.userId, appId }) },
+
+  // Platform infra
+  { path: "/notifications", comp: "NotificationCenter" },
+  { path: "/chatbot", comp: "FleetAssistantBot" },
+  { path: "/help", comp: "HelpCenter" },
+  { path: "/about", comp: "AboutFleetTrack" },
+  { path: "/contact", comp: "ContactUs" },
+  { path: "/privacy", comp: "PrivacyPolicy" },
+  { path: "/terms", comp: "TermsOfService" },
+  { path: "/subscription", comp: "SubscriptionManager", props: (ctx) => ({ userId: ctx.userId }) },
+  { path: "/profile", comp: "UserProfile", props: (ctx) => ({ user: { uid: ctx.userId } }) },
+
+  // FleetAI & Command
+  { path: "/ai-console", comp: "FleetAIConsole", props: (ctx) => ({ trips: ctx.trips, selectedTrip: ctx.selectedTrip, drivers: [] }) },
+  { path: "/telemetry", comp: "FleetOpsTelemetryPanel" },
+  { path: "/admin", comp: "AdminConsole" },
+  { path: "/billing", comp: "FleetBillingDashboard" },
+  { path: "/mobile-sync", comp: "MobileSyncStatus" },
+  { path: "/compliance", comp: "TripTamperDetector" },
+
+  // Centurion Grid (fully wired)
+  { path: "/grid", comp: "CenturrionGrid", props: (ctx) => ({ userId: ctx.userId, appId, selectedTrip: ctx.selectedTrip }) },
+
+  // Add any other explicit routes you want surfaced at top-level below.
+];
 
 const App = () => {
   const [userId, setUserId] = useState(null);
   const [trips, setTrips] = useState([]);
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [locationDetected, setLocationDetected] = useState(false);
+  const [loadingAuth, setLoadingAuth] = useState(true);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
         setUserId(user.uid);
+        setLoadingAuth(false);
       } else {
         signInAnonymously(auth)
-          .then((res) => setUserId(res.user.uid))
-          .catch((err) => console.error("Anonymous sign-in failed:", err));
+          .then((res) => {
+            setUserId(res.user.uid);
+            setLoadingAuth(false);
+          })
+          .catch((err) => {
+            console.error("Anonymous sign-in failed:", err);
+            setLoadingAuth(false);
+          });
       }
     });
 
@@ -101,11 +129,35 @@ const App = () => {
     }
   }, []);
 
-  const handleTripSelect = (trip) => setSelectedTrip(trip);
+  const handleTripSelect = (trip) => {
+    setSelectedTrip(trip);
+  };
+
+  // helper to resolve component and props
+  const renderRouteElement = (compName, extraPropsProvider) => {
+    const Component = C[compName];
+    if (!Component) {
+      // simple fallback for missing exports
+      return () => <div className="p-6">Component {compName} not found in components index.</div>;
+    }
+    const baseCtx = { userId, trips, selectedTrip, locationDetected, handleTripSelect };
+    const extraProps = typeof extraPropsProvider === "function" ? extraPropsProvider(baseCtx) : {};
+    return <Component {...baseCtx} {...extraProps} />;
+  };
+
+  if (loadingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-600">Initializing FleetTrack...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen w-full bg-[#f3e8ff]">
-      <SidebarLayout />
+      {/* SidebarLayout expected to handle nav and RBAC state */}
+      <C.SidebarLayout userId={userId} appId={appId} />
+
       <main className="flex-1 pt-6 px-6 flex justify-center items-start">
         <div className="w-full max-w-[1600px] h-full bg-gray-50 rounded-2xl shadow-2xl border border-gray-200 p-6 overflow-y-auto">
           <div className="flex items-center justify-center mb-6">
@@ -115,80 +167,31 @@ const App = () => {
             </h2>
           </div>
 
-          {selectedTrip?.analysis?.routeData && (
-            <TripMap
+          {/* Always show TripMap when selectedTrip has routeData */}
+          {selectedTrip?.analysis?.routeData && C.TripMap && (
+            <C.TripMap
               origin={selectedTrip.origin}
               destination={selectedTrip.destination}
               routeData={selectedTrip.analysis.routeData}
             />
           )}
 
-          <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" />} />
-            <Route
-              path="/dashboard"
-              element={
-                <TripDashboard
-                  trip={selectedTrip}
-                  trips={trips}
-                  onTripSelect={handleTripSelect}
-                />
-              }
-            />
-            <Route
-              path="/plan"
-              element={
-                <TripPlanner
-                  userId={userId}
-                  onTripCreated={handleTripSelect}
-                  appId={appId}
-                  locationDetected={locationDetected}
-                />
-              }
-            />
-            <Route path="/leaderboard" element={<Leaderboard />} />
-            <Route path="/heatmap" element={<HeatMap />} />
-            <Route path="/clustermap" element={<ClusterMap />} />
-            <Route path="/maintenance" element={<Maintenance />} />
-            <Route path="/offline" element={<OfflineLogger userId={userId} appId={appId} />} />
-            <Route path="/rbac" element={<RBACEditor userId={userId} />} />
-            <Route
-              path="/history"
-              element={
-                <TripHistoryViewer
-                  userId={userId}
-                  appId={appId}
-                  onTripSelect={handleTripSelect}
-                />
-              }
-            />
-            <Route
-              path="/logsheet"
-              element={
-                <TripLogsheetViewer
-                  trip={selectedTrip}
-                  userId={userId}
-                  appId={appId}
-                />
-              }
-            />
-            <Route path="/notifications" element={<NotificationCenter />} />
-            <Route path="/chatbot" element={<FleetAssistantBot />} />
-            <Route path="/help" element={<HelpCenter />} />
-            <Route path="/about" element={<AboutFleetTrack />} />
-            <Route path="/contact" element={<ContactUs />} />
-            <Route path="/privacy" element={<PrivacyPolicy />} />
-            <Route path="/terms" element={<TermsOfService />} />
-            <Route path="/subscription" element={<SubscriptionManager userId={userId} />} />
-            <Route path="/profile" element={<UserProfile user={{ uid: userId }} />} />
-            <Route path="/ai-console" element={<FleetAIConsole trips={trips} selectedTrip={selectedTrip} drivers={[]} />} />
-            <Route path="/telemetry" element={<FleetOpsTelemetryPanel />} />
-            <Route path="/admin" element={<AdminConsole />} />
-            <Route path="/billing" element={<FleetBillingDashboard />} />
-            <Route path="/mobile-sync" element={<MobileSyncStatus />} />
-            <Route path="/compliance" element={<TripTamperDetector />} />
-            <Route path="*" element={<Navigate to="/dashboard" />} />
-          </Routes>
+          <Suspense fallback={<div>Loading...</div>}>
+            <Routes>
+              {routeConfig.map((r) =>
+                r.redirectTo ? (
+                  <Route key={r.path} path={r.path} element={<Navigate to={r.redirectTo} replace />} />
+                ) : (
+                  <Route
+                    key={r.path}
+                    path={r.path}
+                    element={renderRouteElement(r.comp, r.props)}
+                  />
+                )
+              )}
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </Suspense>
         </div>
       </main>
     </div>
