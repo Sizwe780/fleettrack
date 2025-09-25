@@ -1,0 +1,27 @@
+import React from 'react';
+
+export default function DriverIncidentNarrative({ trips }) {
+  const grouped = {};
+
+  trips.forEach(t => {
+    const name = t.driverName || 'Unknown';
+    if (!grouped[name]) grouped[name] = [];
+    t.incidents?.forEach(i => grouped[name].push(i));
+  });
+
+  return (
+    <div className="mt-10 bg-white p-6 rounded-xl shadow">
+      <h2 className="text-xl font-bold mb-4">📖 Driver Incident Narrative</h2>
+      {Object.entries(grouped).map(([name, incidents], i) => (
+        <div key={i} className="mb-4">
+          <h3 className="font-semibold">{name}</h3>
+          <ul className="list-disc pl-5 text-sm">
+            {incidents.map((i, j) => (
+              <li key={j}>{i.type} at {new Date(i.time).toLocaleString()} ({i.severity || 'Medium'})</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}

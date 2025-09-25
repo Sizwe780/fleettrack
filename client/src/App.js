@@ -46,7 +46,7 @@ import MobileSyncStatus from "./components/MobileSyncStatus";
 import TripTamperDetector from "./components/TripTamperDetector";
 
 // UI
-import LightBulbIcon from "@heroicons/react/24/outline/LightBulbIcon";
+import { LightBulbIcon } from "@heroicons/react/24/outline";
 
 const appId = "fleet-track-app";
 
@@ -56,60 +56,58 @@ const App = () => {
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [locationDetected, setLocationDetected] = useState(false);
 
-  // Firebase auth listener
   useEffect(() => {
-    onAuthStateChanged(auth, user => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
         setUserId(user.uid);
       } else {
         signInAnonymously(auth)
-          .then(res => setUserId(res.user.uid))
-          .catch(err => console.error("Anonymous sign-in failed:", err));
+          .then((res) => setUserId(res.user.uid))
+          .catch((err) => console.error("Anonymous sign-in failed:", err));
       }
     });
+
+    return () => unsubscribeAuth();
   }, []);
 
-  // Trip sync from Firestore
   useEffect(() => {
     if (!userId) return;
 
-    try {
-      const tripsQuery = query(
-        collection(db, `apps/${appId}/trips`),
-        where("driver_uid", "==", userId),
-        orderBy("timestamp", "desc")
-      );
+    const tripsQuery = query(
+      collection(db, `apps/${appId}/trips`),
+      where("driver_uid", "==", userId),
+      orderBy("timestamp", "desc")
+    );
 
-      const unsubscribe = onSnapshot(tripsQuery, snapshot => {
-        const tripData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setTrips(tripData);
-      });
+    const unsubscribe = onSnapshot(tripsQuery, (snapshot) => {
+      const tripData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setTrips(tripData);
+    });
 
-      return unsubscribe;
-    } catch (err) {
-      console.error("Trip fetch failed:", err);
-    }
+    return () => unsubscribe();
   }, [userId]);
 
-  // Location detection
   useEffect(() => {
-    navigator.geolocation.getCurrentPosition(
-      () => setLocationDetected(true),
-      () => setLocationDetected(false)
-    );
+    try {
+      navigator.geolocation.getCurrentPosition(
+        () => setLocationDetected(true),
+        () => setLocationDetected(false)
+      );
+    } catch {
+      setLocationDetected(false);
+    }
   }, []);
 
-  const handleTripSelect = trip => setSelectedTrip(trip);
+  const handleTripSelect = (trip) => setSelectedTrip(trip);
 
   return (
     <div className="flex min-h-screen w-full bg-[#f3e8ff]">
       <SidebarLayout />
       <main className="flex-1 pt-6 px-6 flex justify-center items-start">
         <div className="w-full max-w-[1600px] h-full bg-gray-50 rounded-2xl shadow-2xl border border-gray-200 p-6 overflow-y-auto">
-          {/* Trip Intelligence Console Title */}
           <div className="flex items-center justify-center mb-6">
             <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
               Trip Intelligence Console
@@ -117,7 +115,6 @@ const App = () => {
             </h2>
           </div>
 
-          {/* Embedded Map */}
           {selectedTrip?.analysis?.routeData && (
             <TripMap
               origin={selectedTrip.origin}
@@ -126,7 +123,6 @@ const App = () => {
             />
           )}
 
-          {/* Routed Views */}
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" />} />
             <Route
@@ -176,8 +172,6 @@ const App = () => {
                 />
               }
             />
-
-            {/* Platform routes */}
             <Route path="/notifications" element={<NotificationCenter />} />
             <Route path="/chatbot" element={<FleetAssistantBot />} />
             <Route path="/help" element={<HelpCenter />} />
@@ -187,18 +181,12 @@ const App = () => {
             <Route path="/terms" element={<TermsOfService />} />
             <Route path="/subscription" element={<SubscriptionManager userId={userId} />} />
             <Route path="/profile" element={<UserProfile user={{ uid: userId }} />} />
-
-            {/* FleetAI Console */}
             <Route path="/ai-console" element={<FleetAIConsole trips={trips} selectedTrip={selectedTrip} drivers={[]} />} />
-
-            {/* Command Suite */}
             <Route path="/telemetry" element={<FleetOpsTelemetryPanel />} />
             <Route path="/admin" element={<AdminConsole />} />
             <Route path="/billing" element={<FleetBillingDashboard />} />
             <Route path="/mobile-sync" element={<MobileSyncStatus />} />
             <Route path="/compliance" element={<TripTamperDetector />} />
-
-            {/* Fallback */}
             <Route path="*" element={<Navigate to="/dashboard" />} />
           </Routes>
         </div>
