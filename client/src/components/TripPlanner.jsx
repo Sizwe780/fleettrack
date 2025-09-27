@@ -1,106 +1,121 @@
+// src/components/TripPlanner.jsx
 import React, { useState } from "react";
+import { collection, addDoc, Timestamp } from "firebase/firestore";
 import { db } from "../firebase";
-import { addDoc, collection } from "firebase/firestore";
-import logFleetAlert from "../utils/logFleetAlert";
 
-const TripPlanner = ({ userId, appId, onTripCreated, locationDetected }) => {
+export default function TripPlanner({ userId, appId, locationDetected, onTripCreated }) {
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
-  const [vehicleId, setVehicleId] = useState("");
+  const [vehicle, setVehicle] = useState("");
   const [driverName, setDriverName] = useState("");
-  const [cargoType, setCargoType] = useState("");
+  const [cargo, setCargo] = useState("");
   const [eta, setEta] = useState("");
-  const [slaThreshold, setSlaThreshold] = useState("");
-  const [riskLevel, setRiskLevel] = useState("Low");
-  const [status, setStatus] = useState("");
+  const [sla, setSla] = useState("");
+  const [riskLevel, setRiskLevel] = useState("low");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handlePlanTrip = async () => {
-    if (!origin || !destination || !vehicleId || !driverName || !eta) {
-      logFleetAlert("Trip planning failed: missing required fields", "warn");
-      setStatus("Please fill in all required fields.");
-      return;
-    }
-
-    if (!userId || !appId) {
-      logFleetAlert("Trip creation failed: missing userId or appId", "error");
-      setStatus("Trip creation failed. Missing user credentials.");
-      return;
-    }
-
-    if (isNaN(new Date(eta).getTime())) {
-      logFleetAlert("Trip creation failed: invalid ETA format", "error");
-      setStatus("Invalid ETA. Please select a valid date and time.");
-      return;
-    }
-
-    const tripPayload = {
-      origin,
-      destination,
-      vehicleId,
-      driverName,
-      cargoType,
-      eta,
-      slaThreshold,
-      riskLevel,
-      timestamp: new Date().toISOString(),
-      driver_uid: userId,
-      offline: false
-    };
-
+  const handleSubmit = async () => {
+    if (!origin || !destination || !vehicle || !driverName || !eta) return;
+    setSubmitting(true);
     try {
-      const docRef = await addDoc(collection(db, `apps/${appId}/trips`), tripPayload);
-      logFleetAlert(`Trip planned: ${docRef.id}`, "info");
-      setStatus(`Trip successfully planned from ${origin} to ${destination}.`);
-      onTripCreated({ id: docRef.id, ...tripPayload });
-    } catch (error) {
-      logFleetAlert(`Trip creation failed: ${error.message}`, "error");
-      setStatus("Trip creation failed. Try again.");
+      const docRef = await addDoc(collection(db, `apps/${appId}/trips`), {
+        origin,
+        destination,
+        vehicle,
+        driver_name: driverName,
+        cargo,
+        eta,
+        sla,
+        riskLevel,
+        driver_uid: userId,
+        createdAt: Timestamp.now(),
+        status: "scheduled",
+      });
+      setOrigin("");
+      setDestination("");
+      setVehicle("");
+      setDriverName("");
+      setCargo("");
+      setEta("");
+      setSla("");
+      setRiskLevel("low");
+      if (onTripCreated) onTripCreated({ id: docRef.id, origin, destination });
+    } catch (err) {
+      console.error("Trip creation failed:", err);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className="flex items-start justify-center min-h-screen bg-transparent pt-6">
-      <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-10 space-y-10 border border-gray-200">
-        <div className="flex items-center justify-center">
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-            🧭 Welcome to FleetTrack
-          </h2>
-        </div>
+    <div className="max-w-3xl mx-auto bg-white p-6 rounded-xl shadow-md border border-gray-200 space-y-4">
+      <h2 className="text-xl font-bold text-gray-800">🧭 Plan a New Trip</h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <input type="text" value={origin} onChange={(e) => setOrigin(e.target.value)} placeholder="Origin" className="px-5 py-4 text-base rounded-lg border border-gray-400 bg-white shadow-sm" />
-          <input type="text" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Destination" className="px-5 py-4 text-base rounded-lg border border-gray-400 bg-white shadow-sm" />
-          <input type="text" value={vehicleId} onChange={(e) => setVehicleId(e.target.value)} placeholder="Vehicle ID" className="px-5 py-4 text-base rounded-lg border border-gray-400 bg-white shadow-sm" />
-          <input type="text" value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="Driver Name" className="px-5 py-4 text-base rounded-lg border border-gray-400 bg-white shadow-sm" />
-          <input type="text" value={cargoType} onChange={(e) => setCargoType(e.target.value)} placeholder="Cargo Type" className="px-5 py-4 text-base rounded-lg border border-gray-400 bg-white shadow-sm" />
-          <input type="datetime-local" value={eta} onChange={(e) => setEta(e.target.value)} className="px-5 py-4 text-base rounded-lg border border-gray-400 bg-white shadow-sm" />
-          <input type="number" value={slaThreshold} onChange={(e) => setSlaThreshold(e.target.value)} placeholder="SLA Threshold (min)" className="px-5 py-4 text-base rounded-lg border border-gray-400 bg-white shadow-sm" />
-          <select value={riskLevel} onChange={(e) => setRiskLevel(e.target.value)} className="px-5 py-4 text-base rounded-lg border border-gray-400 bg-white shadow-sm">
-            <option>Low</option>
-            <option>Medium</option>
-            <option>High</option>
-          </select>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <button type="button" onClick={handlePlanTrip} className="px-6 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition">
-            🚀 Plan Trip
-          </button>
-
-          <div className="flex items-center gap-2">
-            <span className={`w-4 h-4 rounded-full ${locationDetected ? "bg-green-500" : "bg-red-500"}`} />
-            <span className="text-sm text-gray-700">
-              Location {locationDetected ? "Detected" : "Unavailable"}
-            </span>
-          </div>
-        </div>
-
-        {status && (
-          <p className="text-sm text-green-700 font-medium text-center">{status}</p>
-        )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <input
+          value={origin}
+          onChange={e => setOrigin(e.target.value)}
+          placeholder="Origin"
+          className="border p-2 rounded"
+        />
+        <input
+          value={destination}
+          onChange={e => setDestination(e.target.value)}
+          placeholder="Destination"
+          className="border p-2 rounded"
+        />
+        <input
+          value={vehicle}
+          onChange={e => setVehicle(e.target.value)}
+          placeholder="Vehicle ID"
+          className="border p-2 rounded"
+        />
+        <input
+          value={driverName}
+          onChange={e => setDriverName(e.target.value)}
+          placeholder="Driver Name"
+          className="border p-2 rounded"
+        />
+        <input
+          value={cargo}
+          onChange={e => setCargo(e.target.value)}
+          placeholder="Cargo Description"
+          className="border p-2 rounded"
+        />
+        <input
+          value={eta}
+          onChange={e => setEta(e.target.value)}
+          placeholder="ETA (e.g. 2025-09-26 14:00)"
+          className="border p-2 rounded"
+        />
+        <input
+          value={sla}
+          onChange={e => setSla(e.target.value)}
+          placeholder="SLA Target (minutes)"
+          className="border p-2 rounded"
+        />
+        <select
+          value={riskLevel}
+          onChange={e => setRiskLevel(e.target.value)}
+          className="border p-2 rounded"
+        >
+          <option value="low">Low Risk</option>
+          <option value="medium">Medium Risk</option>
+          <option value="high">High Risk</option>
+        </select>
       </div>
+
+      <button
+        onClick={handleSubmit}
+        disabled={submitting}
+        className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
+      >
+        {submitting ? "Creating..." : "Create Trip"}
+      </button>
+
+      {locationDetected && (
+        <p className="text-green-600 text-sm mt-2">📍 Location detected</p>
+      )}
     </div>
   );
-};
-
-export default TripPlanner;
+}

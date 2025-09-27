@@ -1,0 +1,9 @@
+// src/components/accessibility/FatigueGuard.jsx
+import React from 'react';
+
+export default function FatigueGuard({ fatigueLevel }) {
+  if (fatigueLevel > 70) {
+    return <div className="fatigue-warning">⚠️ Operator fatigue detected. UI simplified.</div>;
+  }
+  return null;
+}

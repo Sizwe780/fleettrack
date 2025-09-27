@@ -3,6 +3,11 @@ import { Html5QrcodeScanner } from 'html5-qrcode';
 
 const CargoQR = ({ onScan }) => {
   useEffect(() => {
+    if (!onScan || typeof onScan !== 'function') {
+      console.warn('CargoQR: onScan callback is missing or invalid.');
+      return;
+    }
+
     const scanner = new Html5QrcodeScanner('qr-reader', {
       fps: 10,
       qrbox: 250,
@@ -11,20 +16,19 @@ const CargoQR = ({ onScan }) => {
       showTorchButtonIfSupported: true,
     });
 
-    scanner.render(
-      (decodedText) => {
-        if (decodedText) {
-          onScan({
-            type: 'cargo-scan',
-            payload: { cargoId: decodedText },
-            timestamp: new Date().toISOString(),
-          });
-        }
-      },
-      (errorMessage) => {
-        console.warn('QR scan error:', errorMessage);
-      }
-    );
+    const successCallback = (decodedText) => {
+      onScan({
+        type: 'cargo-scan',
+        payload: { cargoId: decodedText },
+        timestamp: new Date().toISOString(),
+      });
+    };
+
+    const errorCallback = (errorMessage) => {
+      console.warn('QR scan error:', errorMessage);
+    };
+
+    scanner.render(successCallback, errorCallback);
 
     return () => {
       scanner.clear().catch((err) => {
@@ -33,7 +37,7 @@ const CargoQR = ({ onScan }) => {
     };
   }, [onScan]);
 
-  return <div id="qr-reader" style={{ width: '100%' }} />;
+  return <div id="qr-reader" style={{ width: '100%', height: '300px' }} />;
 };
 
 export default CargoQR;

@@ -1,16 +1,27 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 export default function TripReplayWithStops({ trip }) {
-  const [map, setMap] = useState(null);
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+  const intervalRef = useRef(null);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [replaySpeed, setReplaySpeed] = useState(1000); // ms per step
 
   useEffect(() => {
-    if (!trip.coordinates || trip.coordinates.length === 0) return;
+    if (!trip.coordinates || trip.coordinates.length === 0 || !mapContainerRef.current) return;
 
-    const mapInstance = L.map('trip-replay-map').setView(trip.coordinates[0], 13);
+    if (mapRef.current) {
+      mapRef.current.remove();
+      mapRef.current = null;
+    }
+
+    const mapInstance = L.map(mapContainerRef.current).setView(trip.coordinates[0], 13);
+    mapRef.current = mapInstance;
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
     }).addTo(mapInstance);
@@ -19,35 +30,41 @@ export default function TripReplayWithStops({ trip }) {
     mapInstance.fitBounds(path.getBounds());
 
     const marker = L.marker(trip.coordinates[0]).addTo(mapInstance);
-    setMap({ instance: mapInstance, marker });
+    markerRef.current = marker;
 
-    return () => mapInstance.remove();
+    setCurrentIndex(0); // reset replay index
+
+    return () => {
+      mapInstance.remove();
+      mapRef.current = null;
+      markerRef.current = null;
+    };
   }, [trip.coordinates]);
 
   useEffect(() => {
-    if (!map || !trip.coordinates || trip.coordinates.length === 0) return;
+    if (!mapRef.current || !markerRef.current || !trip.coordinates || trip.coordinates.length === 0) return;
 
-    const interval = setInterval(() => {
+    intervalRef.current = setInterval(() => {
       setCurrentIndex(prev => {
         const next = prev + 1;
         if (next >= trip.coordinates.length) {
-          clearInterval(interval);
+          clearInterval(intervalRef.current);
           return prev;
         }
-        map.marker.setLatLng(trip.coordinates[next]);
+        markerRef.current.setLatLng(trip.coordinates[next]);
         return next;
       });
     }, replaySpeed);
 
-    return () => clearInterval(interval);
-  }, [map, replaySpeed, trip.coordinates]);
+    return () => clearInterval(intervalRef.current);
+  }, [replaySpeed, trip.coordinates]);
 
   const stops = trip.analysis?.stops || [];
 
   return (
     <div className="mt-4">
       <h3 className="text-sm font-semibold mb-2">▶️ Trip Replay</h3>
-      <div id="trip-replay-map" className="h-64 rounded shadow mb-4" />
+      <div ref={mapContainerRef} className="h-64 rounded shadow mb-4 overflow-hidden border" />
 
       <label className="text-xs text-gray-600">Replay Speed (ms):</label>
       <input

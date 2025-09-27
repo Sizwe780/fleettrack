@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet';
 import { db } from '../firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import L from 'leaflet';
+//import L from 'leaflet';
 
 const MapPage = () => {
   const [trips, setTrips] = useState([]);

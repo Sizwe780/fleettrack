@@ -1,0 +1,7 @@
+{
+    "life_preservation_threshold": 0.999,
+    "mutation_depth_limit": 7,
+    "veto_penalty_range": [0.01, 0.05],
+    "entanglement_limit": 0.999,
+    "audit_enabled": true
+  }

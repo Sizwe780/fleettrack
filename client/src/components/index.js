@@ -1,5 +1,5 @@
 // src/components/index.js
-
+import "./index.css"; // or "./styles/index.css"
 // Core cockpit modules
 export { default as SidebarLayout } from './SidebarLayout';
 export { default as TripDashboard } from './TripDashboard';

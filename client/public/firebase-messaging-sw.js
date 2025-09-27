@@ -1,6 +1,8 @@
+// Firebase Messaging Service Worker
 importScripts('https://www.gstatic.com/firebasejs/10.3.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.3.1/firebase-messaging-compat.js');
 
+// Initialize Firebase inside the service worker
 firebase.initializeApp({
   apiKey: "AIzaSyAla1ZaxyeLc9WBDvKbAS8I9hUZnxIWxPg",
   projectId: "fleettrack-84eb6",
@@ -11,7 +13,7 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 // ✅ Background message handler
-messaging.onBackgroundMessage(payload => {
+messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message:', payload);
 
   const notificationTitle = payload.notification?.title || 'FleetTrack Alert';
@@ -21,4 +23,11 @@ messaging.onBackgroundMessage(payload => {
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
+// 🛡️ Optional: Prevent async handshake errors
+self.addEventListener("message", (event) => {
+  if (event.data && event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ ack: true });
+  }
 });

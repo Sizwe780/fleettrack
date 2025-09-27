@@ -1,0 +1,9 @@
+🚨 Incoming Message from Driver D-009:
+"There's a protest blocking the main gate. I'm stuck."
+
+Options:
+1. Escalate to ProtectionUnit
+2. Reroute via South Gate
+3. Send AI reassurance message
+
+Type your command: _

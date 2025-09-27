@@ -1,31 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
-import { messaging } from '../firebase';
+import { auth } from '../firebase';
 
 export default function NotificationCenter() {
   const [permission, setPermission] = useState(Notification.permission);
   const [token, setToken] = useState(null);
   const [messages, setMessages] = useState([]);
 
+  const messaging = auth?.app ? getMessaging(auth.app) : null;
+
   const requestPermission = async () => {
     try {
       const status = await Notification.requestPermission();
       setPermission(status);
 
-      if (status === 'granted') {
-        const fcmToken = await getToken(messaging, { vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY });
+      if (status === 'granted' && messaging) {
+        const fcmToken = await getToken(messaging, {
+          vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+        });
         setToken(fcmToken);
-        console.log('FCM Token:', fcmToken);
+        console.log('[NotificationCenter] FCM Token:', fcmToken);
       }
     } catch (err) {
-      console.error('Notification permission error:', err.message);
+      console.error('[NotificationCenter] Permission error:', err.message);
     }
   };
 
-  onMessage(messaging, (payload) => {
-    console.log('FCM message received:', payload);
-    setMessages(prev => [...prev, payload.notification]);
-  });
+  useEffect(() => {
+    if (!messaging) return;
+
+    const unsubscribe = onMessage(messaging, (payload) => {
+      console.log('[NotificationCenter] FCM message received:', payload);
+      setMessages((prev) => [...prev, payload.notification]);
+    });
+
+    return () => unsubscribe(); // Clean up listener on unmount
+  }, [messaging]);
 
   return (
     <div className="max-w-xl mx-auto mt-10 p-6 bg-white rounded shadow text-sm">

@@ -25,7 +25,7 @@ export default function TripDashboard({ userId }) {
     const path = `apps/fleet-track-app/trips`;
     const unsubscribe = onSnapshot(
       collection(db, path),
-      (snapshot) => {
+      snapshot => {
         const entries = snapshot.docs
           .map(doc => ({ id: doc.id, ...doc.data() }))
           .filter(t => t.driver_uid === userId);
@@ -38,7 +38,7 @@ export default function TripDashboard({ userId }) {
 
         setTrips(sorted);
       },
-      (error) => {
+      error => {
         console.error('Snapshot error:', error.message);
       }
     );
@@ -46,17 +46,17 @@ export default function TripDashboard({ userId }) {
     return () => unsubscribe();
   }, [userId]);
 
-  const avgHealthScore = useMemo(() => Math.round(
-    trips.reduce((sum, t) => sum + (t.analysis?.healthScore ?? t.healthScore ?? 0), 0) / (trips.length || 1)
-  ), [trips]);
+  const avgHealthScore = useMemo(() =>
+    Math.round(trips.reduce((sum, t) => sum + (t.analysis?.healthScore ?? t.healthScore ?? 0), 0) / (trips.length || 1))
+  , [trips]);
 
-  const avgProfit = useMemo(() => Math.round(
-    trips.reduce((sum, t) => sum + (t.analysis?.profitability?.netProfit ?? 0), 0) / (trips.length || 1)
-  ), [trips]);
+  const avgProfit = useMemo(() =>
+    Math.round(trips.reduce((sum, t) => sum + (t.analysis?.profitability?.netProfit ?? 0), 0) / (trips.length || 1))
+  , [trips]);
 
   const flaggedTrips = useMemo(() => trips.filter(t => t.status === 'critical'), [trips]);
 
-  const toggleReplay = (tripId) => {
+  const toggleReplay = tripId => {
     setShowReplayId(prev => (prev === tripId ? null : tripId));
   };
 
@@ -148,6 +148,95 @@ const Speedometer = () => (
   </div>
 );
 
+const TripCard = ({ trip, showReplay, onToggleReplay }) => (
+  <section
+    id={`trip-${trip.id}`}
+    role="region"
+    aria-labelledby={`trip-title-${trip.id}`}
+    className={`p-6 rounded-xl shadow-md border ${trip.status === 'critical' ? 'border-red-500 bg-red-50' : 'bg-white'}`}
+  >
+    <h3 id={`trip-title-${trip.id}`} className="text-lg font-semibold mb-2">
+      {trip.origin} → {trip.destination}
+    </h3>
+
+    <TripStatusBadge status={trip.status} />
+    <TripStatusManager trip={trip} onStatusUpdate={(id, status) => console.log('Status updated:', id, status)} />
+
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mt-2">
+      <TripStat label="Health Score" value={`${trip.analysis?.healthScore ?? trip.healthScore}/100`} />
+      <TripStat label="Status" value={trip.status} />
+      <TripStat label="Profit" value={`R${trip.analysis?.profitability?.netProfit ?? '—'}`} />
+      <TripStat label="Fuel Used" value={`${trip.analysis?.ifta?.fuelUsed ?? '—'} L`} />
+    </div>
+
+    {trip.flagReason && <FlagNotice reason={trip.flagReason} />}
+    {trip.suggestedDriver_name && <SuggestedDriver name={trip.suggestedDriver_name} />}
+
+    {trip.statusHistory && (
+      <div className="mt-3 text-xs text-gray-600">
+        <p className="font-semibold">Status History:</p>
+        <ul className="list-disc ml-4">
+          {trip.statusHistory.map((entry, i) => (
+            <li key={i}>
+              {entry.status} @ {new Date(entry.timestamp).toLocaleString()}
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+
+    <ComplianceSummary trip={trip} />
+    <TripProfitCard trip={trip} />
+    <TripInsightsPanel trip={trip} />
+    <AuditTrailViewer trip={trip} />
+    <IncidentReporter tripId={trip.id} />
+    <TripSignatureBlock driverName={trip.driver_name} />
+
+    {trip.routeData?.path && (
+      <Section title="🗺️ Route Overview">
+        <TripMap origin={trip.origin} destination={trip.destination} routeData={trip.routeData} />
+      </Section>
+    )}
+
+    {trip.analysis?.dailyLogs?.length > 0 && (
+      <Section title="📋 Daily Logsheet">
+        <LogsheetCanvas logs={trip.analysis.dailyLogs} />
+      </Section>
+    )}
+
+    {trip.coordinates && (
+      <>
+        <button
+          onClick={onToggleReplay}
+          aria-label={showReplay ? 'Stop trip replay' : 'Start trip replay'}
+          aria-pressed={showReplay}
+          className={`mt-4 px-3 py-1 text-sm rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+            showReplay
+              ? 'bg-red-600 hover:bg-red-700 text-white'
+              : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+          }`}
+        >
+          {showReplay ? '⏹ Stop Replay' : '▶️ Replay Trip'}
+        </button>
+        {showReplay && <TripReplayWithStops trip={trip} />}
+      </>
+    )}
+
+    <TripExportPreview trip={trip} />
+    <TripExportSignatureBlock trip={trip} />
+
+    <details className="mt-6 bg-gray-50 p-3 rounded text-xs">
+      <summary className="cursor-pointer font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        🔍 Trip Payload Debug
+      </summary>
+      <pre className="overflow-x-auto mt-2 max-w-full whitespace-pre-wrap break-words">
+        {JSON.stringify(trip, null, 2)}
+      </pre>
+    </details>
+  </section>
+);
+
+// 🧩 Supporting Components
 const TripStat = ({ label, value }) => (
   <div>
     <p className="font-semibold text-navy">{label}</p>
@@ -173,90 +262,3 @@ const Section = ({ title, children }) => (
     {children}
   </div>
 );
-
-// ✅ Continue with TripCard component exactly as in your last working version
-const TripCard = ({ trip, showReplay, onToggleReplay }) => (
-    <section
-      id={`trip-${trip.id}`}
-      role="region"
-      aria-labelledby={`trip-title-${trip.id}`}
-      className={`p-6 rounded-xl shadow-md border ${
-        trip.status === 'critical' ? 'border-red-500 bg-red-50' : 'bg-white'
-      }`}
-    >
-      <h3 id={`trip-title-${trip.id}`} className="text-lg font-semibold mb-2">
-        {trip.origin} → {trip.destination}
-      </h3>
-  
-      <TripStatusBadge status={trip.status} />
-      <TripStatusManager trip={trip} onStatusUpdate={(id, status) => console.log('Status updated:', id, status)} />
-  
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mt-2">
-        <TripStat label="Health Score" value={`${trip.analysis?.healthScore ?? trip.healthScore}/100`} />
-        <TripStat label="Status" value={trip.status} />
-        <TripStat label="Profit" value={`R${trip.analysis?.profitability?.netProfit ?? '—'}`} />
-        <TripStat label="Fuel Used" value={`${trip.analysis?.ifta?.fuelUsed ?? '—'} L`} />
-      </div>
-  
-      {trip.flagReason && <FlagNotice reason={trip.flagReason} />}
-      {trip.suggestedDriver_name && <SuggestedDriver name={trip.suggestedDriver_name} />}
-  
-      {trip.statusHistory && (
-        <div className="mt-3 text-xs text-gray-600">
-          <p className="font-semibold">Status History:</p>
-          <ul className="list-disc ml-4">
-            {trip.statusHistory.map((entry, i) => (
-              <li key={i}>{entry.status} @ {new Date(entry.timestamp).toLocaleString()}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-  
-      <ComplianceSummary trip={trip} />
-      <TripProfitCard trip={trip} />
-      <TripInsightsPanel trip={trip} />
-      <AuditTrailViewer trip={trip} />
-      <IncidentReporter tripId={trip.id} />
-      <TripSignatureBlock driverName={trip.driver_name} />
-  
-      {trip.routeData?.path && (
-        <Section title="🗺️ Route Overview">
-          <TripMap origin={trip.origin} destination={trip.destination} routeData={trip.routeData} />
-        </Section>
-      )}
-  
-      {trip.analysis?.dailyLogs?.length > 0 && (
-        <Section title="📋 Daily Logsheet">
-          <LogsheetCanvas logs={trip.analysis.dailyLogs} />
-        </Section>
-      )}
-  
-      {trip.coordinates && (
-        <>
-          <button
-            onClick={onToggleReplay}
-            aria-label={showReplay ? 'Stop trip replay' : 'Start trip replay'}
-            aria-pressed={showReplay}
-            className={`mt-4 px-3 py-1 text-sm rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-              showReplay ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-            }`}
-          >
-            {showReplay ? '⏹ Stop Replay' : '▶️ Replay Trip'}
-          </button>
-          {showReplay && <TripReplayWithStops trip={trip} />}
-        </>
-      )}
-  
-      <TripExportPreview trip={trip} />
-      <TripExportSignatureBlock trip={trip} />
-  
-      <details className="mt-6 bg-gray-50 p-3 rounded text-xs">
-        <summary className="cursor-pointer font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-          🔍 Trip Payload Debug
-        </summary>
-        <pre className="overflow-x-auto mt-2 max-w-full whitespace-pre-wrap break-words">
-          {JSON.stringify(trip, null, 2)}
-        </pre>
-      </details>
-    </section>
-  );
