@@ -30,11 +30,10 @@
     "web-vitals": "^2.1.4"
   },
 "scripts": {
-  "preinstall": "npx npm-force-resolutions",
   "dev": "vite",
   "build": "vite build",
   "preview": "vite preview",
-  "test": "vitest",
+  "test": "vitest --watch",
   "start": "vite",
   "legacy:start": "react-scripts start",
   "legacy:build": "craco build",
