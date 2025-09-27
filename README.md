@@ -1,36 +1,45 @@
-🚀 FleetTrack XII
+🧠 FleetTrack ∞ — Sovereign Intelligence Cockpit (SIC)
 
-🧠 Intelligence Engines
-- QVector Routing Engine
-Predictive trip planning with congestion avoidance, ETA optimization, and real-time rerouting.
-- Centurion Grid Mesh Coordination
-Decentralized fleet syncing across regions, enabling patrol overlap, convoy logic, and multi-node awareness.
-- Audit Overlay Engine
-Signature blocks, fuel analytics, trip replay, and compliance-grade visibility for every route and event.
+FleetTrack ∞ is a sovereign-grade fleet orchestration engine that fuses simulation, prediction, compliance, and training into a unified cockpit. Designed for government and enterprise deployment, it anticipates threats, optimizes dispatch, and certifies every decision with audit-grade traceability.
 
-🖥️ Cockpit-Grade UI/UX
-- Sidebar navigation with logical grouping, breathing room, and visual hierarchy
-- Operator-first layout with ARIA roles, accessibility validation, and real-time responsiveness
-- Modular dashboards for trip planning, fleet alerts, and incident review
+🚀 Features
+- CenturionGrid1000: Simulates 1000 cognition cores across 20 domains (route, fuel, fatigue, threat, etc.)
+- FleetQ Prediction Feed: Live visualization of top actions per domain with confidence scores
+- DispatchOptimizer: Recalculates routes, loads, and schedules for SLA compliance
+- DriverFatigueEstimator: Flags fatigue risk using telemetry and trip history
+- FleetStressMonitor: Monitors systemic strain across vehicles, drivers, and dispatch corridors
+- IncidentEscalationProtocols: Simulates enforcement, lockdown, and recovery flows
+- Student Co-Pilot Console: Onboards and certifies drivers with simulations and progress tracking
+- Audit-Grade Export Engine: Generates log sheets, dispatch certs, receipts, and compliance documents with full mutation trace
 
-🔐 Security & Permissions
-- Firestore rules scoped to driver UID, fleet roles, and document-level access
-- Snapshot listeners hardened against permission errors and async race conditions
-- Audit-ready logging via FleetAlert with UTC timestamps and event traceability
+🧾 Compliance & Certification
+- Government and enterprise-ready export flows
+- Timestamped documents with logo, remarks, and audit trail
+- Stripe receipt sync and dispatch certificate generator
+- FleetTrack ∞ Core Manual for onboarding and institutional training
 
-📡 Real-Time Ops
-- Firebase Messaging integration for trip alerts, route changes, and fleet-wide broadcasts
-- Service Worker support for background sync and offline resilience
-- Middleware pipeline for request validation, role enforcement, and data integrity
+📦 Tech Stack
+- Frontend: React + Vite
+- Routing: React Router
+- Visualization: Leaflet + MarkerCluster
+- Messaging: Firebase Cloud Messaging
+- Styling: TailwindCSS + cockpit-grade semantic polish
 
-📊 Analytics & Reporting
-- Fuel usage tracking with sensor overlays and trip-based summaries
-- Route efficiency scoring and driver performance metrics
-- Export-ready audit logs for compliance, insurance, and incident review
+🛠️ Setup
+git clone https://github.com/Sizwe780/fleettrack.git
+cd fleettrack/client
+npm install
+npm run dev
 
-🧩 Extensibility & Deployment
-- Modular architecture for feature overlays, regional plugins, and hardware integrations
-- Compatible with GPS trackers, fuel sensors, and municipal fleet hardware
-- Ready for deployment across cargo fleets, security patrols, and government transport
+Visit http://localhost:5173 to launch the cockpit.
 
+🧠 Architecture
+FleetTrack ∞ is modular, auditable, and mutation-safe. Every component is designed for sovereign deployment:
+- /cockpit/dashboard: Core visualization and prediction feed
+- /cockpit/student: Training, certification, and onboarding flows
+- /engine: CenturionGrid1000 simulation logic
+- /exports: PDF wrappers, audit trail embedding, and compliance certs
+
+📜 License
+This project is sovereign-grade and legacy-bound. Licensing terms available upon institutional request.
 
