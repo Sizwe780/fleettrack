@@ -18,8 +18,8 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'src'),
       '@engine': path.resolve(__dirname, 'src/cockpit/engine'),
       '@tests': path.resolve(__dirname, 'src/components/tests'),
-      '@core': path.resolve(__dirname, 'src/core'), // optional: for shared logic
-      '@utils': path.resolve(__dirname, 'src/utils'), // optional: for logging, helpers
+      '@core': path.resolve(__dirname, 'src/core'),
+      '@utils': path.resolve(__dirname, 'src/utils'),
     },
   },
   test: {
@@ -33,7 +33,10 @@ export default defineConfig({
     exclude: ['node_modules', 'dist'],
     coverage: {
       reporter: ['text', 'json', 'html'],
-      exclude: ['src/setupTests.js', 'src/**/*.stories.{js,jsx,ts,tsx}'],
+      exclude: [
+        'src/setupTests.js',
+        'src/**/*.stories.{js,jsx,ts,tsx}',
+      ],
     },
   },
 });
